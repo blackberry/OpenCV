@@ -14,7 +14,7 @@ set(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS true)
 # Following block can broke build in case of cross-compilng
 # but CMAKE_CROSSCOMPILING variable will be set only on project(OpenCV) command
 # so we will try to detect crosscompiling by presense of CMAKE_TOOLCHAIN_FILE
-if(NOT CMAKE_TOOLCHAIN_FILE)
+if(NOT CMAKE_TOOLCHAIN_FILE AND NOT QNX)
     # Add these standard paths to the search paths for FIND_LIBRARY
     # to find libraries from these locations first
     if(UNIX)
@@ -31,7 +31,13 @@ if(NOT CMAKE_TOOLCHAIN_FILE)
     if(MSVC)
         set(CMAKE_USE_RELATIVE_PATHS ON CACHE INTERNAL "" FORCE)
     endif()
-endif(NOT CMAKE_TOOLCHAIN_FILE)
+endif(NOT CMAKE_TOOLCHAIN_FILE AND NOT QNX)
+
+if(QNX)
+    add_definitions(-D__QNX__)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+endif(QNX)
 
 # --------------------------------------------------------------
 # Top level OpenCV project
@@ -255,7 +261,7 @@ endif()
 # ----------------------------------------------------------------------------
 # Detect GNU version:
 # ----------------------------------------------------------------------------
-if(CMAKE_COMPILER_IS_GNUCXX)
+if(CMAKE_COMPILER_IS_GNUCXX AND NOT QNX)
     execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
                   OUTPUT_VARIABLE CMAKE_OPENCV_GCC_VERSION_FULL
                   OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -588,8 +594,12 @@ if(UNIX)
             set(HAVE_CAMV4L2 FALSE)
         endif()
 
-        if(ANDROID)
+	if(QNX)
+            set(OPENCV_LINKER_LIBS m)
+        elseif(ANDROID AND NOT QNX)
             set(OPENCV_LINKER_LIBS dl m log)
+	elseif(QNX)
+            set(OPENCV_LINKER_LIBS m log)
         elseif(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD" OR ${CMAKE_SYSTEM_NAME} MATCHES "NetBSD")
             set(OPENCV_LINKER_LIBS m pthread)
         else()
@@ -1166,7 +1176,7 @@ if(CMAKE_COMPILER_IS_GNUCXX)
     endif()
 
     # We need pthread's
-    if(UNIX AND NOT ANDROID)
+    if(UNIX AND NOT ANDROID AND NOT QNX)
         set(EXTRA_C_FLAGS "${EXTRA_C_FLAGS} -pthread")
     endif()
 
