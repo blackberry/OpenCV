@@ -2,6 +2,9 @@
 #define _OPENCV_IMAGESTORAGE_H_
 
 #include "highgui.h"
+#if defined(__QNX__)
+#include "stdio.h"
+#endif
 
 using namespace cv;
 

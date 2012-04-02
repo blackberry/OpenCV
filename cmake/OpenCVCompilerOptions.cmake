@@ -53,7 +53,7 @@ if(CMAKE_COMPILER_IS_GNUCXX)
   endif()
 
   # We need pthread's
-  if(UNIX AND NOT ANDROID)
+  if(UNIX AND NOT ANDROID AND NOT QNX)
     set(OPENCV_EXTRA_C_FLAGS "${OPENCV_EXTRA_C_FLAGS} -pthread")
   endif()
 

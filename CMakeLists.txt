@@ -23,7 +23,7 @@ endif()
 # Following block can broke build in case of cross-compilng
 # but CMAKE_CROSSCOMPILING variable will be set only on project(OpenCV) command
 # so we will try to detect crosscompiling by presense of CMAKE_TOOLCHAIN_FILE
-if(NOT CMAKE_TOOLCHAIN_FILE)
+if(NOT CMAKE_TOOLCHAIN_FILE AND NOT QNX)
   # it _must_ go before project(OpenCV) in order to work
   if(WIN32)
     set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Installation Directory")
@@ -37,7 +37,13 @@ if(NOT CMAKE_TOOLCHAIN_FILE)
 else(NOT CMAKE_TOOLCHAIN_FILE)
   #Android: set output folder to ${CMAKE_BINARY_DIR}
   set( LIBRARY_OUTPUT_PATH_ROOT ${CMAKE_BINARY_DIR} CACHE PATH "root for library output, set this to change where android libs are compiled to" )
-endif(NOT CMAKE_TOOLCHAIN_FILE)
+endif(NOT CMAKE_TOOLCHAIN_FILE AND NOT QNX)
+
+if(QNX)
+    add_definitions(-D__QNX__)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+endif(QNX)
 
 # --------------------------------------------------------------
 # Top level OpenCV project
@@ -321,7 +327,11 @@ if(UNIX)
     elseif(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD" OR ${CMAKE_SYSTEM_NAME} MATCHES "NetBSD")
       set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} m pthread)
     else()
-      set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} dl m pthread rt)
+        if(QNX)
+            set(OPENCV_LINKER_LIBS m)
+        else()
+            set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} dl m pthread rt)
+        endif()
     endif()
   else()
     add_definitions(-DHAVE_ALLOCA -DHAVE_ALLOCA_H -DHAVE_LIBPTHREAD -DHAVE_UNISTD_H)

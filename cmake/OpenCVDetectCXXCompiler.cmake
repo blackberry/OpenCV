@@ -47,7 +47,7 @@ endif()
 # ----------------------------------------------------------------------------
 # Detect GNU version:
 # ----------------------------------------------------------------------------
-if(CMAKE_COMPILER_IS_GNUCXX)
+if(CMAKE_COMPILER_IS_GNUCXX AND NOT QNX)
     execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
                   OUTPUT_VARIABLE CMAKE_OPENCV_GCC_VERSION_FULL
                   OUTPUT_STRIP_TRAILING_WHITESPACE)
