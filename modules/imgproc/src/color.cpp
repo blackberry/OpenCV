@@ -91,6 +91,7 @@
 
 #include "precomp.hpp"
 #include <limits>
+#include <iostream>
 
 namespace cv
 {
@@ -1766,26 +1767,26 @@ public:
             __m128i r1 = _mm_loadu_si128((const __m128i*)(bayer+bayer_step));
             __m128i r2 = _mm_loadu_si128((const __m128i*)(bayer+bayer_step*2));
             
-            __m128i b1 = _mm_add_epi16(_mm_srli_epi16(_mm_slli_epi16(r0, 8), 8),
-                                       _mm_srli_epi16(_mm_slli_epi16(r2, 8), 8));
+            __m128i b1 = _mm_add_epi16(_mm_srli_epi16(_mm_slli_epi16(r0, 8), 7),
+                                       _mm_srli_epi16(_mm_slli_epi16(r2, 8), 7));
             __m128i b0 = _mm_add_epi16(b1, _mm_srli_si128(b1, 2));
             b1 = _mm_slli_epi16(_mm_srli_si128(b1, 2), 1);
             
-            __m128i g0 = _mm_add_epi16(_mm_srli_epi16(r0, 8), _mm_srli_epi16(r2, 8));
-            __m128i g1 = _mm_srli_epi16(_mm_slli_epi16(r1, 8), 8);
+            __m128i g0 = _mm_add_epi16(_mm_srli_epi16(r0, 7), _mm_srli_epi16(r2, 7));
+            __m128i g1 = _mm_srli_epi16(_mm_slli_epi16(r1, 8), 7);
             g0 = _mm_add_epi16(g0, _mm_add_epi16(g1, _mm_srli_si128(g1, 2)));
             g1 = _mm_slli_epi16(_mm_srli_si128(g1, 2), 2);
             
             r0 = _mm_srli_epi16(r1, 8);
-            r1 = _mm_slli_epi16(_mm_add_epi16(r0, _mm_srli_si128(r0, 2)), 1);
-            r0 = _mm_slli_epi16(r0, 2);
-            
+            r1 = _mm_slli_epi16(_mm_add_epi16(r0, _mm_srli_si128(r0, 2)), 2);
+            r0 = _mm_slli_epi16(r0, 3);
+
             g0 = _mm_add_epi16(_mm_mulhi_epi16(b0, _b2y), _mm_mulhi_epi16(g0, _g2y));
             g1 = _mm_add_epi16(_mm_mulhi_epi16(b1, _b2y), _mm_mulhi_epi16(g1, _g2y));
             g0 = _mm_add_epi16(g0, _mm_mulhi_epi16(r0, _r2y));
             g1 = _mm_add_epi16(g1, _mm_mulhi_epi16(r1, _r2y));
-            g0 = _mm_srli_epi16(g0, 1);
-            g1 = _mm_srli_epi16(g1, 1);
+            g0 = _mm_srli_epi16(g0, 2);
+            g1 = _mm_srli_epi16(g1, 2);
             g0 = _mm_packus_epi16(g0, g0);
             g1 = _mm_packus_epi16(g1, g1);
             g0 = _mm_unpacklo_epi8(g0, g1);
@@ -2233,7 +2234,7 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
         bool greenCell = greenCell0;
         
         i = 2;
-#if CV_SSE2        
+#if CV_SSE2
         int limit = !haveSSE ? N-2 : greenCell ? std::min(3, N-2) : 2;
 #else
         int limit = N - 2;
@@ -2400,201 +2401,217 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
                 dstrow[blueIdx^2] = CV_CAST_8U(R);
                 greenCell = !greenCell;
             }
-            
+
 #if CV_SSE2
             if( !haveSSE )
                 break;
             
-            __m128i emask = _mm_set1_epi32(0x0000ffff),
-                omask = _mm_set1_epi32(0xffff0000),
-                all_ones = _mm_set1_epi16(1),
-                z = _mm_setzero_si128();
-            __m128 _0_5 = _mm_set1_ps(0.5f);
+            __m128i emask    = _mm_set1_epi32(0x0000ffff),
+                    omask    = _mm_set1_epi32(0xffff0000),
+                    z        = _mm_setzero_si128();
+            __m128 _0_5      = _mm_set1_ps(0.5f);
             
-            #define _mm_merge_epi16(a, b) \
-                _mm_or_si128(_mm_and_si128(a, emask), _mm_and_si128(b, omask))
-            #define _mm_cvtloepi16_ps(a) _mm_cvtepi32_ps(_mm_srai_epi32(_mm_unpacklo_epi16(a,a), 16))
-            #define _mm_cvthiepi16_ps(a) _mm_cvtepi32_ps(_mm_srai_epi32(_mm_unpackhi_epi16(a,a), 16))
+            #define _mm_merge_epi16(a, b) _mm_or_si128(_mm_and_si128(a, emask), _mm_and_si128(b, omask)) //(aA_aA_aA_aA) * (bB_bB_bB_bB) => (bA_bA_bA_bA)
+            #define _mm_cvtloepi16_ps(a)  _mm_cvtepi32_ps(_mm_srai_epi32(_mm_unpacklo_epi16(a,a), 16))   //(1,2,3,4,5,6,7,8) => (1f,2f,3f,4f)
+            #define _mm_cvthiepi16_ps(a)  _mm_cvtepi32_ps(_mm_srai_epi32(_mm_unpackhi_epi16(a,a), 16))   //(1,2,3,4,5,6,7,8) => (5f,6f,7f,8f)
+            #define _mm_loadl_u8_s16(ptr, offset) _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)((ptr) + (offset))), z) //load 8 uchars to 8 shorts
             
             // process 8 pixels at once
             for( ; i <= N - 10; i += 8, srow += 8, brow0 += 8, brow1 += 8, brow2 += 8 )
             {
-                __m128i gradN, gradS, gradW, gradE, gradNE, gradSW, gradNW, gradSE;
-                gradN = _mm_adds_epu16(_mm_loadu_si128((__m128i*)brow0),
-                                       _mm_loadu_si128((__m128i*)brow1));
-                gradS = _mm_adds_epu16(_mm_loadu_si128((__m128i*)brow1),
-                                       _mm_loadu_si128((__m128i*)brow2));
-                gradW = _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow1+N-1)),
-                                       _mm_loadu_si128((__m128i*)(brow1+N)));
-                gradE = _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow1+N+1)),
-                                       _mm_loadu_si128((__m128i*)(brow1+N)));
+                //int gradN = brow0[0] + brow1[0];
+                __m128i gradN = _mm_adds_epi16(_mm_loadu_si128((__m128i*)brow0), _mm_loadu_si128((__m128i*)brow1));
+
+                //int gradS = brow1[0] + brow2[0];
+                __m128i gradS = _mm_adds_epi16(_mm_loadu_si128((__m128i*)brow1), _mm_loadu_si128((__m128i*)brow2));
+
+                //int gradW = brow1[N-1] + brow1[N];
+                __m128i gradW = _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow1+N-1)), _mm_loadu_si128((__m128i*)(brow1+N)));
+
+                //int gradE = brow1[N+1] + brow1[N];
+                __m128i gradE = _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow1+N+1)), _mm_loadu_si128((__m128i*)(brow1+N)));
                 
-                __m128i minGrad, maxGrad, T;
-                minGrad = _mm_min_epi16(_mm_min_epi16(_mm_min_epi16(gradN, gradS), gradW), gradE);
-                maxGrad = _mm_max_epi16(_mm_max_epi16(_mm_max_epi16(gradN, gradS), gradW), gradE);
+                //int minGrad = std::min(std::min(std::min(gradN, gradS), gradW), gradE);
+                //int maxGrad = std::max(std::max(std::max(gradN, gradS), gradW), gradE);
+                __m128i minGrad = _mm_min_epi16(_mm_min_epi16(gradN, gradS), _mm_min_epi16(gradW, gradE));
+                __m128i maxGrad = _mm_max_epi16(_mm_max_epi16(gradN, gradS), _mm_max_epi16(gradW, gradE));
                 
                 __m128i grad0, grad1;
                 
-                grad0 = _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow0+N4+1)),
-                                       _mm_loadu_si128((__m128i*)(brow1+N4)));
-                grad1 = _mm_adds_epu16(_mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow0+N2)),
-                                                      _mm_loadu_si128((__m128i*)(brow0+N2+1))),
-                                       _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow1+N2)),
-                                                      _mm_loadu_si128((__m128i*)(brow1+N2+1))));
-                gradNE = _mm_srli_epi16(_mm_merge_epi16(grad0, grad1), 1);
+                //int gradNE = brow0[N4+1] + brow1[N4];
+                //int gradNE = brow0[N2] + brow0[N2+1] + brow1[N2] + brow1[N2+1];
+                grad0 = _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow0+N4+1)), _mm_loadu_si128((__m128i*)(brow1+N4)));
+                grad1 = _mm_adds_epi16( _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow0+N2)), _mm_loadu_si128((__m128i*)(brow0+N2+1))),
+                                        _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow1+N2)), _mm_loadu_si128((__m128i*)(brow1+N2+1))));
+                __m128i gradNE = _mm_merge_epi16(grad0, grad1);
                 
-                grad0 = _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow2+N4-1)),
-                                       _mm_loadu_si128((__m128i*)(brow1+N4)));
-                grad1 = _mm_adds_epu16(_mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow2+N2)),
-                                                      _mm_loadu_si128((__m128i*)(brow2+N2-1))),
-                                       _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow1+N2)),
-                                                      _mm_loadu_si128((__m128i*)(brow1+N2-1))));
-                gradSW = _mm_srli_epi16(_mm_merge_epi16(grad0, grad1), 1);
+                //int gradSW = brow1[N4] + brow2[N4-1];
+                //int gradSW = brow1[N2] + brow1[N2-1] + brow2[N2] + brow2[N2-1];
+                grad0 = _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow2+N4-1)), _mm_loadu_si128((__m128i*)(brow1+N4)));
+                grad1 = _mm_adds_epi16(_mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow2+N2)), _mm_loadu_si128((__m128i*)(brow2+N2-1))),
+                                       _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow1+N2)), _mm_loadu_si128((__m128i*)(brow1+N2-1))));
+                __m128i gradSW = _mm_merge_epi16(grad0, grad1);
                 
                 minGrad = _mm_min_epi16(_mm_min_epi16(minGrad, gradNE), gradSW);
                 maxGrad = _mm_max_epi16(_mm_max_epi16(maxGrad, gradNE), gradSW);
+
+                //int gradNW = brow0[N5-1] + brow1[N5];
+                //int gradNW = brow0[N3] + brow0[N3-1] + brow1[N3] + brow1[N3-1];
+                grad0 = _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow0+N5-1)), _mm_loadu_si128((__m128i*)(brow1+N5)));
+                grad1 = _mm_adds_epi16(_mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow0+N3)), _mm_loadu_si128((__m128i*)(brow0+N3-1))),
+                                       _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow1+N3)), _mm_loadu_si128((__m128i*)(brow1+N3-1))));
+                __m128i gradNW = _mm_merge_epi16(grad0, grad1);
                 
-                grad0 = _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow0+N5-1)),
-                                       _mm_loadu_si128((__m128i*)(brow1+N5)));
-                grad1 = _mm_adds_epu16(_mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow0+N3)),
-                                                      _mm_loadu_si128((__m128i*)(brow0+N3-1))),
-                                       _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow1+N3)),
-                                                      _mm_loadu_si128((__m128i*)(brow1+N3-1))));
-                gradNW = _mm_srli_epi16(_mm_merge_epi16(grad0, grad1), 1);
-                
-                grad0 = _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow2+N5+1)),
-                                       _mm_loadu_si128((__m128i*)(brow1+N5)));
-                grad1 = _mm_adds_epu16(_mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow2+N3)),
-                                                      _mm_loadu_si128((__m128i*)(brow2+N3+1))),
-                                       _mm_adds_epu16(_mm_loadu_si128((__m128i*)(brow1+N3)),
-                                                      _mm_loadu_si128((__m128i*)(brow1+N3+1))));
-                gradSE = _mm_srli_epi16(_mm_merge_epi16(grad0, grad1), 1);
+                //int gradSE = brow1[N5] + brow2[N5+1];
+                //int gradSE = brow1[N3] + brow1[N3+1] + brow2[N3] + brow2[N3+1];
+                grad0 = _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow2+N5+1)), _mm_loadu_si128((__m128i*)(brow1+N5)));
+                grad1 = _mm_adds_epi16(_mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow2+N3)), _mm_loadu_si128((__m128i*)(brow2+N3+1))),
+                                       _mm_adds_epi16(_mm_loadu_si128((__m128i*)(brow1+N3)), _mm_loadu_si128((__m128i*)(brow1+N3+1))));
+                __m128i gradSE = _mm_merge_epi16(grad0, grad1);
                 
                 minGrad = _mm_min_epi16(_mm_min_epi16(minGrad, gradNW), gradSE);
                 maxGrad = _mm_max_epi16(_mm_max_epi16(maxGrad, gradNW), gradSE);
                 
-                T = _mm_add_epi16(_mm_srli_epi16(maxGrad, 1), minGrad);
-                __m128i RGs = z, GRs = z, Bs = z, ng = z, mask;
+                //int T = minGrad + maxGrad/2;
+                __m128i T = _mm_adds_epi16(_mm_srli_epi16(maxGrad, 1), minGrad);
+
+                __m128i RGs = z, GRs = z, Bs = z, ng = z;
                 
-                __m128i t0, t1, x0, x1, x2, x3, x4, x5, x6, x7, x8,
-                x9, x10, x11, x12, x13, x14, x15, x16;
+                __m128i x0  = _mm_loadl_u8_s16(srow, +0          );
+                __m128i x1  = _mm_loadl_u8_s16(srow, -1 - bstep  );
+                __m128i x2  = _mm_loadl_u8_s16(srow, -1 - bstep*2);
+                __m128i x3  = _mm_loadl_u8_s16(srow,    - bstep  );
+                __m128i x4  = _mm_loadl_u8_s16(srow, +1 - bstep*2);
+                __m128i x5  = _mm_loadl_u8_s16(srow, +1 - bstep  );
+                __m128i x6  = _mm_loadl_u8_s16(srow, +2 - bstep  );
+                __m128i x7  = _mm_loadl_u8_s16(srow, +1          );
+                __m128i x8  = _mm_loadl_u8_s16(srow, +2 + bstep  );
+                __m128i x9  = _mm_loadl_u8_s16(srow, +1 + bstep  );
+                __m128i x10 = _mm_loadl_u8_s16(srow, +1 + bstep*2);
+                __m128i x11 = _mm_loadl_u8_s16(srow,    + bstep  );
+                __m128i x12 = _mm_loadl_u8_s16(srow, -1 + bstep*2);
+                __m128i x13 = _mm_loadl_u8_s16(srow, -1 + bstep  );
+                __m128i x14 = _mm_loadl_u8_s16(srow, -2 + bstep  );
+                __m128i x15 = _mm_loadl_u8_s16(srow, -1          );
+                __m128i x16 = _mm_loadl_u8_s16(srow, -2 - bstep  );
+
+                __m128i t0, t1, mask;
                 
-                x0 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)srow), z);
+                // gradN ***********************************************
+                mask = _mm_cmpgt_epi16(T, gradN); // mask = T>gradN
+                ng = _mm_sub_epi16(ng, mask);     // ng += (T>gradN)
                 
-                x1 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep-1)), z);
-                x2 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep*2-1)), z);
-                x3 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep)), z);
-                x4 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep*2+1)), z);
-                x5 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep+1)), z);
-                x6 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep+2)), z);
-                x7 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+1)), z);
-                x8 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep+2)), z);
-                x9 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep+1)), z);
-                x10 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep*2+1)), z);
-                x11 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep)), z);
-                x12 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep*2-1)), z);
-                x13 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep-1)), z);
-                x14 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep-2)), z);
-                x15 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-1)), z);
-                x16 = _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep-2)), z);
+                t0 = _mm_slli_epi16(x3, 1);                                 // srow[-bstep]*2
+                t1 = _mm_adds_epi16(_mm_loadl_u8_s16(srow, -bstep*2), x0);  // srow[-bstep*2] + srow[0]
                 
-                // gradN
-                mask = _mm_cmpgt_epi16(T, gradN);
-                ng = _mm_sub_epi16(ng, mask);
+                // RGs += (srow[-bstep*2] + srow[0]) * (T>gradN)
+                RGs = _mm_adds_epi16(RGs, _mm_and_si128(t1, mask));
+                // GRs += {srow[-bstep]*2; (srow[-bstep*2-1] + srow[-bstep*2+1])} * (T>gradN)
+                GRs = _mm_adds_epi16(GRs, _mm_and_si128(_mm_merge_epi16(t0, _mm_adds_epi16(x2,x4)), mask));
+                // Bs  += {(srow[-bstep-1]+srow[-bstep+1]); srow[-bstep]*2 } * (T>gradN)
+                Bs  = _mm_adds_epi16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_adds_epi16(x1,x5), t0), mask));
                 
-                t0 = _mm_slli_epi16(x3, 1);
-                t1 = _mm_adds_epu16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep*2)), z), x0);
+                // gradNE **********************************************
+                mask = _mm_cmpgt_epi16(T, gradNE); // mask = T>gradNE
+                ng = _mm_sub_epi16(ng, mask);      // ng += (T>gradNE)
+
+                t0 = _mm_slli_epi16(x5, 1);                                    // srow[-bstep+1]*2
+                t1 = _mm_adds_epi16(_mm_loadl_u8_s16(srow, -bstep*2+2), x0);   // srow[-bstep*2+2] + srow[0]
                 
-                RGs = _mm_adds_epu16(RGs, _mm_and_si128(t1, mask));
-                GRs = _mm_adds_epu16(GRs, _mm_and_si128(_mm_merge_epi16(t0, _mm_adds_epu16(x2,x4)), mask));
-                Bs = _mm_adds_epu16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_adds_epu16(x1,x5), t0), mask));
+                // RGs += {(srow[-bstep*2+2] + srow[0]); srow[-bstep+1]*2} * (T>gradNE)
+                RGs = _mm_adds_epi16(RGs, _mm_and_si128(_mm_merge_epi16(t1, t0), mask));
+                // GRs += {brow0[N6+1]; (srow[-bstep*2+1] + srow[1])} * (T>gradNE)
+                GRs = _mm_adds_epi16(GRs, _mm_and_si128(_mm_merge_epi16(_mm_loadu_si128((__m128i*)(brow0+N6+1)), _mm_adds_epi16(x4,x7)), mask));
+                // Bs  += {srow[-bstep+1]*2; (srow[-bstep] + srow[-bstep+2])}  * (T>gradNE)
+                Bs  = _mm_adds_epi16(Bs, _mm_and_si128(_mm_merge_epi16(t0,_mm_adds_epi16(x3,x6)), mask));
                 
-                // gradNE
-                mask = _mm_cmpgt_epi16(T, gradNE);
-                ng = _mm_sub_epi16(ng, mask);
+                // gradE ***********************************************
+                mask = _mm_cmpgt_epi16(T, gradE);  // mask = T>gradE
+                ng = _mm_sub_epi16(ng, mask);      // ng += (T>gradE)
                 
-                t0 = _mm_slli_epi16(x5, 1);
-                t1 = _mm_adds_epu16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep*2+2)), z), x0);
+                t0 = _mm_slli_epi16(x7, 1);                         // srow[1]*2
+                t1 = _mm_adds_epi16(_mm_loadl_u8_s16(srow, 2), x0); // srow[2] + srow[0]
+
+                // RGs += (srow[2] + srow[0]) * (T>gradE)
+                RGs = _mm_adds_epi16(RGs, _mm_and_si128(t1, mask));
+                // GRs += (srow[1]*2) * (T>gradE)
+                GRs = _mm_adds_epi16(GRs, _mm_and_si128(t0, mask));
+                // Bs  += {(srow[-bstep+1]+srow[bstep+1]); (srow[-bstep+2]+srow[bstep+2])} * (T>gradE)
+                Bs  = _mm_adds_epi16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_adds_epi16(x5,x9), _mm_adds_epi16(x6,x8)), mask));
                 
-                RGs = _mm_adds_epu16(RGs, _mm_and_si128(_mm_merge_epi16(t1, t0), mask));
-                GRs = _mm_adds_epu16(GRs, _mm_and_si128(_mm_merge_epi16(_mm_loadu_si128((__m128i*)(brow0+N6+1)),
-                                                                        _mm_adds_epu16(x4,x7)), mask));
-                Bs = _mm_adds_epu16(Bs, _mm_and_si128(_mm_merge_epi16(t0,_mm_adds_epu16(x3,x6)), mask));
+                // gradSE **********************************************
+                mask = _mm_cmpgt_epi16(T, gradSE);  // mask = T>gradSE
+                ng = _mm_sub_epi16(ng, mask);       // ng += (T>gradSE)
                 
-                // gradE
-                mask = _mm_cmpgt_epi16(T, gradE);
-                ng = _mm_sub_epi16(ng, mask);
+                t0 = _mm_slli_epi16(x9, 1);                                 // srow[bstep+1]*2
+                t1 = _mm_adds_epi16(_mm_loadl_u8_s16(srow, bstep*2+2), x0); // srow[bstep*2+2] + srow[0]
+
+                // RGs += {(srow[bstep*2+2] + srow[0]); srow[bstep+1]*2} * (T>gradSE)
+                RGs = _mm_adds_epi16(RGs, _mm_and_si128(_mm_merge_epi16(t1, t0), mask));
+                // GRs += {brow2[N6+1]; (srow[1]+srow[bstep*2+1])} * (T>gradSE)
+                GRs = _mm_adds_epi16(GRs, _mm_and_si128(_mm_merge_epi16(_mm_loadu_si128((__m128i*)(brow2+N6+1)), _mm_adds_epi16(x7,x10)), mask));
+                // Bs  += {srow[-bstep+1]*2; (srow[bstep+2]+srow[bstep])} * (T>gradSE)
+                Bs  = _mm_adds_epi16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_slli_epi16(x5, 1), _mm_adds_epi16(x8,x11)), mask));
                 
-                t0 = _mm_slli_epi16(x7, 1);
-                t1 = _mm_adds_epu16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+2)), z), x0);
+                // gradS ***********************************************
+                mask = _mm_cmpgt_epi16(T, gradS);  // mask = T>gradS
+                ng = _mm_sub_epi16(ng, mask);      // ng += (T>gradS)
                 
-                RGs = _mm_adds_epu16(RGs, _mm_and_si128(t1, mask));
-                GRs = _mm_adds_epu16(GRs, _mm_and_si128(t0, mask));
-                Bs = _mm_adds_epu16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_adds_epu16(x5,x9),
-                                                                      _mm_adds_epu16(x6,x8)), mask));
+                t0 = _mm_slli_epi16(x11, 1);                             // srow[bstep]*2
+                t1 = _mm_adds_epi16(_mm_loadl_u8_s16(srow,bstep*2), x0); // srow[bstep*2]+srow[0]
+
+                // RGs += (srow[bstep*2]+srow[0]) * (T>gradS)
+                RGs = _mm_adds_epi16(RGs, _mm_and_si128(t1, mask));
+                // GRs += {srow[bstep]*2; (srow[bstep*2+1]+srow[bstep*2-1])} * (T>gradS)
+                GRs = _mm_adds_epi16(GRs, _mm_and_si128(_mm_merge_epi16(t0, _mm_adds_epi16(x10,x12)), mask));
+                // Bs  += {(srow[bstep+1]+srow[bstep-1]); srow[bstep]*2} * (T>gradS)
+                Bs  = _mm_adds_epi16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_adds_epi16(x9,x13), t0), mask));
                 
-                // gradSE
-                mask = _mm_cmpgt_epi16(T, gradSE);
-                ng = _mm_sub_epi16(ng, mask);
+                // gradSW **********************************************
+                mask = _mm_cmpgt_epi16(T, gradSW);  // mask = T>gradSW
+                ng = _mm_sub_epi16(ng, mask);       // ng += (T>gradSW)
                 
-                t0 = _mm_slli_epi16(x9, 1);
-                t1 = _mm_adds_epu16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep*2+2)), z), x0);
+                t0 = _mm_slli_epi16(x13, 1);                                // srow[bstep-1]*2
+                t1 = _mm_adds_epi16(_mm_loadl_u8_s16(srow, bstep*2-2), x0); // srow[bstep*2-2]+srow[0]
+
+                // RGs += {(srow[bstep*2-2]+srow[0]); srow[bstep-1]*2} * (T>gradSW)
+                RGs = _mm_adds_epi16(RGs, _mm_and_si128(_mm_merge_epi16(t1, t0), mask));
+                // GRs += {brow2[N6-1]; (srow[bstep*2-1]+srow[-1])} * (T>gradSW)
+                GRs = _mm_adds_epi16(GRs, _mm_and_si128(_mm_merge_epi16(_mm_loadu_si128((__m128i*)(brow2+N6-1)), _mm_adds_epi16(x12,x15)), mask));
+                // Bs  += {srow[bstep-1]*2; (srow[bstep]+srow[bstep-2])} * (T>gradSW)
+                Bs  = _mm_adds_epi16(Bs, _mm_and_si128(_mm_merge_epi16(t0,_mm_adds_epi16(x11,x14)), mask));
                 
-                RGs = _mm_adds_epu16(RGs, _mm_and_si128(_mm_merge_epi16(t1, t0), mask));
-                GRs = _mm_adds_epu16(GRs, _mm_and_si128(_mm_merge_epi16(_mm_loadu_si128((__m128i*)(brow2+N6+1)),
-                                                                        _mm_adds_epu16(x7,x10)), mask));
-                Bs = _mm_adds_epu16(Bs, _mm_and_si128(_mm_merge_epi16(t0, _mm_adds_epu16(x8,x11)), mask));
+                // gradW ***********************************************
+                mask = _mm_cmpgt_epi16(T, gradW);  // mask = T>gradW
+                ng = _mm_sub_epi16(ng, mask);      // ng += (T>gradW)
                 
-                // gradS
-                mask = _mm_cmpgt_epi16(T, gradS);
-                ng = _mm_sub_epi16(ng, mask);
+                t0 = _mm_slli_epi16(x15, 1);                         // srow[-1]*2
+                t1 = _mm_adds_epi16(_mm_loadl_u8_s16(srow, -2), x0); // srow[-2]+srow[0]
+
+                // RGs += (srow[-2]+srow[0]) * (T>gradW)
+                RGs = _mm_adds_epi16(RGs, _mm_and_si128(t1, mask));
+                // GRs += (srow[-1]*2) * (T>gradW)
+                GRs = _mm_adds_epi16(GRs, _mm_and_si128(t0, mask));
+                // Bs  += {(srow[-bstep-1]+srow[bstep-1]); (srow[bstep-2]+srow[-bstep-2])} * (T>gradW)
+                Bs  = _mm_adds_epi16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_adds_epi16(x1,x13), _mm_adds_epi16(x14,x16)), mask));
                 
-                t0 = _mm_slli_epi16(x11, 1);
-                t1 = _mm_adds_epu16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep*2)), z), x0);
+                // gradNW **********************************************
+                mask = _mm_cmpgt_epi16(T, gradNW);  // mask = T>gradNW
+                ng = _mm_sub_epi16(ng, mask);       // ng += (T>gradNW)
                 
-                RGs = _mm_adds_epu16(RGs, _mm_and_si128(t1, mask));
-                GRs = _mm_adds_epu16(GRs, _mm_and_si128(_mm_merge_epi16(t0, _mm_adds_epu16(x10,x12)), mask));
-                Bs = _mm_adds_epu16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_adds_epu16(x9,x13), t0), mask));
-                
-                // gradSW
-                mask = _mm_cmpgt_epi16(T, gradSW);
-                ng = _mm_sub_epi16(ng, mask);
-                
-                t0 = _mm_slli_epi16(x13, 1);
-                t1 = _mm_adds_epu16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow+bstep*2-2)), z), x0);
-                
-                RGs = _mm_adds_epu16(RGs, _mm_and_si128(_mm_merge_epi16(t1, t0), mask));
-                GRs = _mm_adds_epu16(GRs, _mm_and_si128(_mm_merge_epi16(_mm_loadu_si128((__m128i*)(brow2+N6-1)),
-                                                                        _mm_adds_epu16(x12,x15)), mask));
-                Bs = _mm_adds_epu16(Bs, _mm_and_si128(_mm_merge_epi16(t0,_mm_adds_epu16(x11,x14)), mask));
-                
-                // gradW
-                mask = _mm_cmpgt_epi16(T, gradW);
-                ng = _mm_sub_epi16(ng, mask);
-                
-                t0 = _mm_slli_epi16(x15, 1);
-                t1 = _mm_adds_epu16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-2)), z), x0);
-                
-                RGs = _mm_adds_epu16(RGs, _mm_and_si128(t1, mask));
-                GRs = _mm_adds_epu16(GRs, _mm_and_si128(t0, mask));
-                Bs = _mm_adds_epu16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_adds_epu16(x1,x13),
-                                                                      _mm_adds_epu16(x14,x16)), mask));
-                
-                // gradNW
-                mask = _mm_cmpgt_epi16(T, gradNW);
-                ng = _mm_max_epi16(_mm_sub_epi16(ng, mask), all_ones);
-                
+                t0 = _mm_slli_epi16(x1, 1);                                 // srow[-bstep-1]*2
+                t1 = _mm_adds_epi16(_mm_loadl_u8_s16(srow,-bstep*2-2), x0); // srow[-bstep*2-2]+srow[0]
+
+                // RGs += {(srow[-bstep*2-2]+srow[0]); srow[-bstep-1]*2} * (T>gradNW)
+                RGs = _mm_adds_epi16(RGs, _mm_and_si128(_mm_merge_epi16(t1, t0), mask));
+                // GRs += {brow0[N6-1]; (srow[-bstep*2-1]+srow[-1])} * (T>gradNW)
+                GRs = _mm_adds_epi16(GRs, _mm_and_si128(_mm_merge_epi16(_mm_loadu_si128((__m128i*)(brow0+N6-1)), _mm_adds_epi16(x2,x15)), mask));
+                // Bs  += {srow[-bstep-1]*2; (srow[-bstep]+srow[-bstep-2])} * (T>gradNW)
+                Bs  = _mm_adds_epi16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_slli_epi16(x5, 1),_mm_adds_epi16(x3,x16)), mask));
+
                 __m128 ngf0, ngf1;
                 ngf0 = _mm_div_ps(_0_5, _mm_cvtloepi16_ps(ng));
                 ngf1 = _mm_div_ps(_0_5, _mm_cvthiepi16_ps(ng));
-                
-                t0 = _mm_slli_epi16(x1, 1);
-                t1 = _mm_adds_epu16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i*)(srow-bstep*2-2)), z), x0);
-                
-                RGs = _mm_adds_epu16(RGs, _mm_and_si128(_mm_merge_epi16(t1, t0), mask));
-                GRs = _mm_adds_epu16(GRs, _mm_and_si128(_mm_merge_epi16(_mm_loadu_si128((__m128i*)(brow0+N6-1)),
-                                                                        _mm_adds_epu16(x2,x15)), mask));
-                Bs = _mm_adds_epu16(Bs, _mm_and_si128(_mm_merge_epi16(t0,_mm_adds_epu16(x3,x16)), mask));
                 
                 // now interpolate r, g & b
                 t0 = _mm_sub_epi16(GRs, RGs);
@@ -2650,123 +2667,466 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
 
 ///////////////////////////////////// YUV420 -> RGB /////////////////////////////////////
 
-template<int R, int SPorI>
-struct YUV4202BGR888Invoker
+const int ITUR_BT_601_CY = 1220542;
+const int ITUR_BT_601_CUB = 2116026;
+const int ITUR_BT_601_CUG = -409993;
+const int ITUR_BT_601_CVG = -852492;
+const int ITUR_BT_601_CVR = 1673527;
+const int ITUR_BT_601_SHIFT = 20;
+
+template<int bIdx, int uIdx>
+struct YUV420sp2RGB888Invoker
 {
     Mat* dst;
     const uchar* my1, *muv;
-    int width;
+    int width, stride;
 
-    YUV4202BGR888Invoker(Mat& _dst, int _width, const uchar* _y1, const uchar* _uv)
-        : dst(&_dst), my1(_y1), muv(_uv), width(_width) {}
+    YUV420sp2RGB888Invoker(Mat* _dst, int _stride, const uchar* _y1, const uchar* _uv)
+        : dst(_dst), my1(_y1), muv(_uv), width(_dst->cols), stride(_stride) {}
 
     void operator()(const BlockedRange& range) const
     {
-        //B = 1.164(Y - 16)                  + 2.018(U - 128)
-        //G = 1.164(Y - 16) - 0.813(V - 128) - 0.391(U - 128)
+        int rangeBegin = range.begin() * 2;
+        int rangeEnd = range.end() * 2;
+
         //R = 1.164(Y - 16) + 1.596(V - 128)
+        //G = 1.164(Y - 16) - 0.813(V - 128) - 0.391(U - 128)
+        //B = 1.164(Y - 16)                  + 2.018(U - 128)
 
-        const uchar* y1 = my1 + range.begin() * width, *uv = muv + range.begin() * width / 2;
+        //R = (1220542(Y - 16) + 1673527(V - 128)                  + (1 << 19)) >> 20
+        //G = (1220542(Y - 16) - 852492(V - 128) - 409993(U - 128) + (1 << 19)) >> 20
+        //B = (1220542(Y - 16)                  + 2116026(U - 128) + (1 << 19)) >> 20
 
-        for (int j = range.begin(); j < range.end(); j+=2, y1+=width*2, uv+=width)
+        const uchar* y1 = my1 + rangeBegin * stride, *uv = muv + rangeBegin * stride / 2;
+
+#ifdef HAVE_TEGRA_OPTIMIZATION
+        if(tegra::cvtYUV4202RGB(bIdx, uIdx, 3, y1, uv, stride, dst->ptr<uchar>(rangeBegin), dst->step, rangeEnd - rangeBegin, dst->cols))
+            return;
+#endif
+
+        for (int j = rangeBegin; j < rangeEnd; j += 2, y1 += stride * 2, uv += stride)
         {
             uchar* row1 = dst->ptr<uchar>(j);
-            uchar* row2 = dst->ptr<uchar>(j+1);
-            const uchar* y2 = y1 + width;
+            uchar* row2 = dst->ptr<uchar>(j + 1);
+            const uchar* y2 = y1 + stride;
 
-            for(int i = 0; i < width; i+=2,row1+=6,row2+=6)
+            for (int i = 0; i < width; i += 2, row1 += 6, row2 += 6)
             {
-                int cr = uv[i + SPorI + 0] - 128;
-                int cb = uv[i - SPorI + 1] - 128;
+                int u = int(uv[i + 0 + uIdx]) - 128;
+                int v = int(uv[i + 1 - uIdx]) - 128;
 
-                int ruv = 409 * cr + 128;
-                int guv = 128 - 100 * cb - 208 * cr;
-                int buv = 516 * cb + 128;
+                int ruv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVR * v;
+                int guv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVG * v + ITUR_BT_601_CUG * u;
+                int buv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CUB * u;
 
-                int y00 = (y1[i] - 16) * 298;
-                row1[0+R] = saturate_cast<uchar>((y00 + buv) >> 8);
-                row1[1] = saturate_cast<uchar>((y00 + guv) >> 8);
-                row1[2-R] = saturate_cast<uchar>((y00 + ruv) >> 8);
+                int y00 = std::max(0, int(y1[i]) - 16) * ITUR_BT_601_CY;
+                row1[2-bIdx] = saturate_cast<uchar>((y00 + ruv) >> ITUR_BT_601_SHIFT);
+                row1[1]      = saturate_cast<uchar>((y00 + guv) >> ITUR_BT_601_SHIFT);
+                row1[bIdx]   = saturate_cast<uchar>((y00 + buv) >> ITUR_BT_601_SHIFT);
 
-                int y01 = (y1[i+1] - 16) * 298;
-                row1[3+R] = saturate_cast<uchar>((y01 + buv) >> 8);
-                row1[4] = saturate_cast<uchar>((y01 + guv) >> 8);
-                row1[5-R] = saturate_cast<uchar>((y01 + ruv) >> 8);
+                int y01 = std::max(0, int(y1[i + 1]) - 16) * ITUR_BT_601_CY;
+                row1[5-bIdx] = saturate_cast<uchar>((y01 + ruv) >> ITUR_BT_601_SHIFT);
+                row1[4]      = saturate_cast<uchar>((y01 + guv) >> ITUR_BT_601_SHIFT);
+                row1[3+bIdx] = saturate_cast<uchar>((y01 + buv) >> ITUR_BT_601_SHIFT);
 
-                int y10 = (y2[i] - 16) * 298;
-                row2[0+R] = saturate_cast<uchar>((y10 + buv) >> 8);
-                row2[1] = saturate_cast<uchar>((y10 + guv) >> 8);
-                row2[2-R] = saturate_cast<uchar>((y10 + ruv) >> 8);
+                int y10 = std::max(0, int(y2[i]) - 16) * ITUR_BT_601_CY;
+                row2[2-bIdx] = saturate_cast<uchar>((y10 + ruv) >> ITUR_BT_601_SHIFT);
+                row2[1]      = saturate_cast<uchar>((y10 + guv) >> ITUR_BT_601_SHIFT);
+                row2[bIdx]   = saturate_cast<uchar>((y10 + buv) >> ITUR_BT_601_SHIFT);
 
-                int y11 = (y2[i+1] - 16) * 298;
-                row2[3+R] = saturate_cast<uchar>((y11 + buv) >> 8);
-                row2[4] = saturate_cast<uchar>((y11 + guv) >> 8);
-                row2[5-R] = saturate_cast<uchar>((y11 + ruv) >> 8);
+                int y11 = std::max(0, int(y2[i + 1]) - 16) * ITUR_BT_601_CY;
+                row2[5-bIdx] = saturate_cast<uchar>((y11 + ruv) >> ITUR_BT_601_SHIFT);
+                row2[4]      = saturate_cast<uchar>((y11 + guv) >> ITUR_BT_601_SHIFT);
+                row2[3+bIdx] = saturate_cast<uchar>((y11 + buv) >> ITUR_BT_601_SHIFT);
             }
         }
     }
 };
 
-template<int R, int SPorI>
-struct YUV4202BGRA8888Invoker
+template<int bIdx, int uIdx>
+struct YUV420sp2RGBA8888Invoker
 {
     Mat* dst;
     const uchar* my1, *muv;
-    int width;
+    int width, stride;
 
-    YUV4202BGRA8888Invoker(Mat& _dst, int _width, const uchar* _y1, const uchar* _uv)
-        : dst(&_dst), my1(_y1), muv(_uv), width(_width) {}
+    YUV420sp2RGBA8888Invoker(Mat* _dst, int _stride, const uchar* _y1, const uchar* _uv)
+        : dst(_dst), my1(_y1), muv(_uv), width(_dst->cols), stride(_stride) {}
 
     void operator()(const BlockedRange& range) const
     {
-        //B = 1.164(Y - 16)                  + 2.018(U - 128)
-        //G = 1.164(Y - 16) - 0.813(V - 128) - 0.391(U - 128)
+        int rangeBegin = range.begin() * 2;
+        int rangeEnd = range.end() * 2;
+
         //R = 1.164(Y - 16) + 1.596(V - 128)
+        //G = 1.164(Y - 16) - 0.813(V - 128) - 0.391(U - 128)
+        //B = 1.164(Y - 16)                  + 2.018(U - 128)
 
-        const uchar* y1 = my1 + range.begin() * width, *uv = muv + range.begin() * width / 2;
+        //R = (1220542(Y - 16) + 1673527(V - 128)                  + (1 << 19)) >> 20
+        //G = (1220542(Y - 16) - 852492(V - 128) - 409993(U - 128) + (1 << 19)) >> 20
+        //B = (1220542(Y - 16)                  + 2116026(U - 128) + (1 << 19)) >> 20
 
-        for (int j = range.begin(); j < range.end(); j+=2, y1+=width*2, uv+=width)
+        const uchar* y1 = my1 + rangeBegin * stride, *uv = muv + rangeBegin * stride / 2;
+
+#ifdef HAVE_TEGRA_OPTIMIZATION
+        if(tegra::cvtYUV4202RGB(bIdx, uIdx, 4, y1, uv, stride, dst->ptr<uchar>(rangeBegin), dst->step, rangeEnd - rangeBegin, dst->cols))
+            return;
+#endif
+
+        for (int j = rangeBegin; j < rangeEnd; j += 2, y1 += stride * 2, uv += stride)
         {
             uchar* row1 = dst->ptr<uchar>(j);
-            uchar* row2 = dst->ptr<uchar>(j+1);
-            const uchar* y2 = y1 + width;
+            uchar* row2 = dst->ptr<uchar>(j + 1);
+            const uchar* y2 = y1 + stride;
 
-            for(int i = 0; i < width; i+=2,row1+=8,row2+=8)
+            for (int i = 0; i < width; i += 2, row1 += 8, row2 += 8)
             {
-                int cr = uv[i + SPorI + 0] - 128;
-                int cb = uv[i - SPorI + 1] - 128;
+                int u = int(uv[i + 0 + uIdx]) - 128;
+                int v = int(uv[i + 1 - uIdx]) - 128;
 
-                int ruv = 409 * cr + 128;
-                int guv = 128 - 100 * cb - 208 * cr;
-                int buv = 516 * cb + 128;
+                int ruv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVR * v;
+                int guv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVG * v + ITUR_BT_601_CUG * u;
+                int buv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CUB * u;
 
-                int y00 = (y1[i] - 16) * 298;
-                row1[0+R] = saturate_cast<uchar>((y00 + buv) >> 8);
-                row1[1] = saturate_cast<uchar>((y00 + guv) >> 8);
-                row1[2-R] = saturate_cast<uchar>((y00 + ruv) >> 8);
-                row1[3] = (uchar)0xff;
+                int y00 = std::max(0, int(y1[i]) - 16) * ITUR_BT_601_CY;
+                row1[2-bIdx] = saturate_cast<uchar>((y00 + ruv) >> ITUR_BT_601_SHIFT);
+                row1[1]      = saturate_cast<uchar>((y00 + guv) >> ITUR_BT_601_SHIFT);
+                row1[bIdx]   = saturate_cast<uchar>((y00 + buv) >> ITUR_BT_601_SHIFT);
+                row1[3]      = uchar(0xff);
 
-                int y01 = (y1[i+1] - 16) * 298;
-                row1[4+R] = saturate_cast<uchar>((y01 + buv) >> 8);
-                row1[5] = saturate_cast<uchar>((y01 + guv) >> 8);
-                row1[6-R] = saturate_cast<uchar>((y01 + ruv) >> 8);
-                row1[7] = (uchar)0xff;
+                int y01 = std::max(0, int(y1[i + 1]) - 16) * ITUR_BT_601_CY;
+                row1[6-bIdx] = saturate_cast<uchar>((y01 + ruv) >> ITUR_BT_601_SHIFT);
+                row1[5]      = saturate_cast<uchar>((y01 + guv) >> ITUR_BT_601_SHIFT);
+                row1[4+bIdx] = saturate_cast<uchar>((y01 + buv) >> ITUR_BT_601_SHIFT);
+                row1[7]      = uchar(0xff);
 
-                int y10 = (y2[i] - 16) * 298;
-                row2[0+R] = saturate_cast<uchar>((y10 + buv) >> 8);
-                row2[1] = saturate_cast<uchar>((y10 + guv) >> 8);
-                row2[2-R] = saturate_cast<uchar>((y10 + ruv) >> 8);
-                row2[3] = (uchar)0xff;
+                int y10 = std::max(0, int(y2[i]) - 16) * ITUR_BT_601_CY;
+                row2[2-bIdx] = saturate_cast<uchar>((y10 + ruv) >> ITUR_BT_601_SHIFT);
+                row2[1]      = saturate_cast<uchar>((y10 + guv) >> ITUR_BT_601_SHIFT);
+                row2[bIdx]   = saturate_cast<uchar>((y10 + buv) >> ITUR_BT_601_SHIFT);
+                row2[3]      = uchar(0xff);
 
-                int y11 = (y2[i+1] - 16) * 298;
-                row2[4+R] = saturate_cast<uchar>((y11 + buv) >> 8);
-                row2[5] = saturate_cast<uchar>((y11 + guv) >> 8);
-                row2[6-R] = saturate_cast<uchar>((y11 + ruv) >> 8);
-                row2[7] = (uchar)0xff;
+                int y11 = std::max(0, int(y2[i + 1]) - 16) * ITUR_BT_601_CY;
+                row2[6-bIdx] = saturate_cast<uchar>((y11 + ruv) >> ITUR_BT_601_SHIFT);
+                row2[5]      = saturate_cast<uchar>((y11 + guv) >> ITUR_BT_601_SHIFT);
+                row2[4+bIdx] = saturate_cast<uchar>((y11 + buv) >> ITUR_BT_601_SHIFT);
+                row2[7]      = uchar(0xff);
             }
         }
     }
 };
+
+template<int bIdx>
+struct YUV420p2RGB888Invoker
+{
+    Mat* dst;
+    const uchar* my1, *mu, *mv;
+    int width, stride;
+    int ustepIdx, vstepIdx;
+
+    YUV420p2RGB888Invoker(Mat* _dst, int _stride, const uchar* _y1, const uchar* _u, const uchar* _v, int _ustepIdx, int _vstepIdx)
+        : dst(_dst), my1(_y1), mu(_u), mv(_v), width(_dst->cols), stride(_stride), ustepIdx(_ustepIdx), vstepIdx(_vstepIdx) {}
+
+    void operator()(const BlockedRange& range) const
+    {
+        const int rangeBegin = range.begin() * 2;
+        const int rangeEnd = range.end() * 2;
+        
+        size_t uvsteps[2] = {width/2, stride - width/2};
+        int usIdx = ustepIdx, vsIdx = vstepIdx;
+
+        const uchar* y1 = my1 + rangeBegin * stride;
+        const uchar* u1 = mu + (range.begin() / 2) * stride;
+        const uchar* v1 = mv + (range.begin() / 2) * stride;
+        
+        if(range.begin() % 2 == 1)
+        {
+            u1 += uvsteps[(usIdx++) & 1];
+            v1 += uvsteps[(vsIdx++) & 1];
+        }
+
+        for (int j = rangeBegin; j < rangeEnd; j += 2, y1 += stride * 2, u1 += uvsteps[(usIdx++) & 1], v1 += uvsteps[(vsIdx++) & 1])
+        {
+            uchar* row1 = dst->ptr<uchar>(j);
+            uchar* row2 = dst->ptr<uchar>(j + 1);
+            const uchar* y2 = y1 + stride;
+
+            for (int i = 0; i < width / 2; i += 1, row1 += 6, row2 += 6)
+            {
+                int u = int(u1[i]) - 128;
+                int v = int(v1[i]) - 128;
+
+                int ruv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVR * v;
+                int guv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVG * v + ITUR_BT_601_CUG * u;
+                int buv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CUB * u;
+
+                int y00 = std::max(0, int(y1[2 * i]) - 16) * ITUR_BT_601_CY;
+                row1[2-bIdx] = saturate_cast<uchar>((y00 + ruv) >> ITUR_BT_601_SHIFT);
+                row1[1]      = saturate_cast<uchar>((y00 + guv) >> ITUR_BT_601_SHIFT);
+                row1[bIdx]   = saturate_cast<uchar>((y00 + buv) >> ITUR_BT_601_SHIFT);
+
+                int y01 = std::max(0, int(y1[2 * i + 1]) - 16) * ITUR_BT_601_CY;
+                row1[5-bIdx] = saturate_cast<uchar>((y01 + ruv) >> ITUR_BT_601_SHIFT);
+                row1[4]      = saturate_cast<uchar>((y01 + guv) >> ITUR_BT_601_SHIFT);
+                row1[3+bIdx] = saturate_cast<uchar>((y01 + buv) >> ITUR_BT_601_SHIFT);
+
+                int y10 = std::max(0, int(y2[2 * i]) - 16) * ITUR_BT_601_CY;
+                row2[2-bIdx] = saturate_cast<uchar>((y10 + ruv) >> ITUR_BT_601_SHIFT);
+                row2[1]      = saturate_cast<uchar>((y10 + guv) >> ITUR_BT_601_SHIFT);
+                row2[bIdx]   = saturate_cast<uchar>((y10 + buv) >> ITUR_BT_601_SHIFT);
+
+                int y11 = std::max(0, int(y2[2 * i + 1]) - 16) * ITUR_BT_601_CY;
+                row2[5-bIdx] = saturate_cast<uchar>((y11 + ruv) >> ITUR_BT_601_SHIFT);
+                row2[4]      = saturate_cast<uchar>((y11 + guv) >> ITUR_BT_601_SHIFT);
+                row2[3+bIdx] = saturate_cast<uchar>((y11 + buv) >> ITUR_BT_601_SHIFT);
+            }
+        }
+    }
+};
+
+template<int bIdx>
+struct YUV420p2RGBA8888Invoker
+{
+    Mat* dst;
+    const uchar* my1, *mu, *mv;
+    int width, stride;
+    int ustepIdx, vstepIdx;
+
+    YUV420p2RGBA8888Invoker(Mat* _dst, int _stride, const uchar* _y1, const uchar* _u, const uchar* _v, int _ustepIdx, int _vstepIdx)
+        : dst(_dst), my1(_y1), mu(_u), mv(_v), width(_dst->cols), stride(_stride), ustepIdx(_ustepIdx), vstepIdx(_vstepIdx) {}
+
+    void operator()(const BlockedRange& range) const
+    {
+        int rangeBegin = range.begin() * 2;
+        int rangeEnd = range.end() * 2;
+
+        size_t uvsteps[2] = {width/2, stride - width/2};
+        int usIdx = ustepIdx, vsIdx = vstepIdx;
+
+        const uchar* y1 = my1 + rangeBegin * stride;
+        const uchar* u1 = mu + (range.begin() / 2) * stride;
+        const uchar* v1 = mv + (range.begin() / 2) * stride;
+        
+        if(range.begin() % 2 == 1)
+        {
+            u1 += uvsteps[(usIdx++) & 1];
+            v1 += uvsteps[(vsIdx++) & 1];
+        }
+
+        for (int j = rangeBegin; j < rangeEnd; j += 2, y1 += stride * 2, u1 += uvsteps[(usIdx++) & 1], v1 += uvsteps[(vsIdx++) & 1])
+        {
+            uchar* row1 = dst->ptr<uchar>(j);
+            uchar* row2 = dst->ptr<uchar>(j + 1);
+            const uchar* y2 = y1 + stride;
+
+            for (int i = 0; i < width / 2; i += 1, row1 += 8, row2 += 8)
+            {
+                int u = int(u1[i]) - 128;
+                int v = int(v1[i]) - 128;
+
+                int ruv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVR * v;
+                int guv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVG * v + ITUR_BT_601_CUG * u;
+                int buv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CUB * u;
+
+                int y00 = std::max(0, int(y1[2 * i]) - 16) * ITUR_BT_601_CY;
+                row1[2-bIdx] = saturate_cast<uchar>((y00 + ruv) >> ITUR_BT_601_SHIFT);
+                row1[1]      = saturate_cast<uchar>((y00 + guv) >> ITUR_BT_601_SHIFT);
+                row1[bIdx]   = saturate_cast<uchar>((y00 + buv) >> ITUR_BT_601_SHIFT);
+                row1[3]      = uchar(0xff);
+
+                int y01 = std::max(0, int(y1[2 * i + 1]) - 16) * ITUR_BT_601_CY;
+                row1[6-bIdx] = saturate_cast<uchar>((y01 + ruv) >> ITUR_BT_601_SHIFT);
+                row1[5]      = saturate_cast<uchar>((y01 + guv) >> ITUR_BT_601_SHIFT);
+                row1[4+bIdx] = saturate_cast<uchar>((y01 + buv) >> ITUR_BT_601_SHIFT);
+                row1[7]      = uchar(0xff);
+
+                int y10 = std::max(0, int(y2[2 * i]) - 16) * ITUR_BT_601_CY;
+                row2[2-bIdx] = saturate_cast<uchar>((y10 + ruv) >> ITUR_BT_601_SHIFT);
+                row2[1]      = saturate_cast<uchar>((y10 + guv) >> ITUR_BT_601_SHIFT);
+                row2[bIdx]   = saturate_cast<uchar>((y10 + buv) >> ITUR_BT_601_SHIFT);
+                row2[3]      = uchar(0xff);
+
+                int y11 = std::max(0, int(y2[2 * i + 1]) - 16) * ITUR_BT_601_CY;
+                row2[6-bIdx] = saturate_cast<uchar>((y11 + ruv) >> ITUR_BT_601_SHIFT);
+                row2[5]      = saturate_cast<uchar>((y11 + guv) >> ITUR_BT_601_SHIFT);
+                row2[4+bIdx] = saturate_cast<uchar>((y11 + buv) >> ITUR_BT_601_SHIFT);
+                row2[7]      = uchar(0xff);
+            }
+        }
+    }
+};
+
+#define MIN_SIZE_FOR_PARALLEL_YUV420_CONVERSION (320*240)
+
+template<int bIdx, int uIdx>
+inline void cvtYUV420sp2RGB(Mat& _dst, int _stride, const uchar* _y1, const uchar* _uv)
+{
+    YUV420sp2RGB888Invoker<bIdx, uIdx> converter(&_dst, _stride, _y1,  _uv);
+#ifdef HAVE_TBB
+    if (_dst.total() >= MIN_SIZE_FOR_PARALLEL_YUV420_CONVERSION)
+        parallel_for(BlockedRange(0, _dst.rows/2), converter);
+    else
+#endif
+        converter(BlockedRange(0, _dst.rows/2));
+}
+
+template<int bIdx, int uIdx>
+inline void cvtYUV420sp2RGBA(Mat& _dst, int _stride, const uchar* _y1, const uchar* _uv)
+{
+    YUV420sp2RGBA8888Invoker<bIdx, uIdx> converter(&_dst, _stride, _y1,  _uv);
+#ifdef HAVE_TBB
+    if (_dst.total() >= MIN_SIZE_FOR_PARALLEL_YUV420_CONVERSION)
+        parallel_for(BlockedRange(0, _dst.rows/2), converter);
+    else
+#endif
+        converter(BlockedRange(0, _dst.rows/2));
+}
+
+template<int bIdx>
+inline void cvtYUV420p2RGB(Mat& _dst, int _stride, const uchar* _y1, const uchar* _u, const uchar* _v, int ustepIdx, int vstepIdx)
+{
+    YUV420p2RGB888Invoker<bIdx> converter(&_dst, _stride, _y1,  _u, _v, ustepIdx, vstepIdx);
+#ifdef HAVE_TBB
+    if (_dst.total() >= MIN_SIZE_FOR_PARALLEL_YUV420_CONVERSION)
+        parallel_for(BlockedRange(0, _dst.rows/2), converter);
+    else
+#endif
+        converter(BlockedRange(0, _dst.rows/2));
+}
+
+template<int bIdx>
+inline void cvtYUV420p2RGBA(Mat& _dst, int _stride, const uchar* _y1, const uchar* _u, const uchar* _v, int ustepIdx, int vstepIdx)
+{
+    YUV420p2RGBA8888Invoker<bIdx> converter(&_dst, _stride, _y1,  _u, _v, ustepIdx, vstepIdx);
+#ifdef HAVE_TBB
+    if (_dst.total() >= MIN_SIZE_FOR_PARALLEL_YUV420_CONVERSION)
+        parallel_for(BlockedRange(0, _dst.rows/2), converter);
+    else
+#endif
+        converter(BlockedRange(0, _dst.rows/2));
+}
+
+///////////////////////////////////// YUV422 -> RGB /////////////////////////////////////
+
+template<int bIdx, int uIdx, int yIdx>
+struct YUV422toRGB888Invoker
+{
+    Mat* dst;
+    const uchar* src;
+    int width, stride;
+
+    YUV422toRGB888Invoker(Mat* _dst, int _stride, const uchar* _yuv)
+        : dst(_dst), src(_yuv), width(_dst->cols), stride(_stride) {}
+
+    void operator()(const BlockedRange& range) const
+    {
+        int rangeBegin = range.begin();
+        int rangeEnd = range.end();
+
+        const int uidx = 1 - yIdx + uIdx * 2;
+        const int vidx = (2 + uidx) % 4;
+        const uchar* yuv_src = src + rangeBegin * stride;
+
+        for (int j = rangeBegin; j < rangeEnd; j++, yuv_src += stride)
+        {
+            uchar* row = dst->ptr<uchar>(j);
+
+            for (int i = 0; i < 2 * width; i += 4, row += 6)
+            {
+                int u = int(yuv_src[i + uidx]) - 128;
+                int v = int(yuv_src[i + vidx]) - 128;
+
+                int ruv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVR * v;
+                int guv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVG * v + ITUR_BT_601_CUG * u;
+                int buv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CUB * u;
+
+                int y00 = std::max(0, int(yuv_src[i + yIdx]) - 16) * ITUR_BT_601_CY;
+                row[2-bIdx] = saturate_cast<uchar>((y00 + ruv) >> ITUR_BT_601_SHIFT);
+                row[1]      = saturate_cast<uchar>((y00 + guv) >> ITUR_BT_601_SHIFT);
+                row[bIdx]   = saturate_cast<uchar>((y00 + buv) >> ITUR_BT_601_SHIFT);
+
+                int y01 = std::max(0, int(yuv_src[i + yIdx + 2]) - 16) * ITUR_BT_601_CY;
+                row[5-bIdx] = saturate_cast<uchar>((y01 + ruv) >> ITUR_BT_601_SHIFT);
+                row[4]      = saturate_cast<uchar>((y01 + guv) >> ITUR_BT_601_SHIFT);
+                row[3+bIdx] = saturate_cast<uchar>((y01 + buv) >> ITUR_BT_601_SHIFT);
+            }
+        }
+    }
+};
+
+template<int bIdx, int uIdx, int yIdx>
+struct YUV422toRGBA8888Invoker
+{
+    Mat* dst;
+    const uchar* src;
+    int width, stride;
+
+    YUV422toRGBA8888Invoker(Mat* _dst, int _stride, const uchar* _yuv)
+        : dst(_dst), src(_yuv), width(_dst->cols), stride(_stride) {}
+
+    void operator()(const BlockedRange& range) const
+    {
+        int rangeBegin = range.begin();
+        int rangeEnd = range.end();
+
+        const int uidx = 1 - yIdx + uIdx * 2;
+        const int vidx = (2 + uidx) % 4;
+        const uchar* yuv_src = src + rangeBegin * stride;
+
+        for (int j = rangeBegin; j < rangeEnd; j++, yuv_src += stride)
+        {
+            uchar* row = dst->ptr<uchar>(j);
+
+            for (int i = 0; i < 2 * width; i += 4, row += 8)
+            {
+                int u = int(yuv_src[i + uidx]) - 128;
+                int v = int(yuv_src[i + vidx]) - 128;
+
+                int ruv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVR * v;
+                int guv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CVG * v + ITUR_BT_601_CUG * u;
+                int buv = (1 << (ITUR_BT_601_SHIFT - 1)) + ITUR_BT_601_CUB * u;
+
+                int y00 = std::max(0, int(yuv_src[i + yIdx]) - 16) * ITUR_BT_601_CY;
+                row[2-bIdx] = saturate_cast<uchar>((y00 + ruv) >> ITUR_BT_601_SHIFT);
+                row[1]      = saturate_cast<uchar>((y00 + guv) >> ITUR_BT_601_SHIFT);
+                row[bIdx]   = saturate_cast<uchar>((y00 + buv) >> ITUR_BT_601_SHIFT);
+                row[3]      = uchar(0xff);
+
+                int y01 = std::max(0, int(yuv_src[i + yIdx + 2]) - 16) * ITUR_BT_601_CY;
+                row[6-bIdx] = saturate_cast<uchar>((y01 + ruv) >> ITUR_BT_601_SHIFT);
+                row[5]      = saturate_cast<uchar>((y01 + guv) >> ITUR_BT_601_SHIFT);
+                row[4+bIdx] = saturate_cast<uchar>((y01 + buv) >> ITUR_BT_601_SHIFT);
+                row[7]      = uchar(0xff);
+            }
+        }
+    }
+};
+
+#define MIN_SIZE_FOR_PARALLEL_YUV422_CONVERSION (320*240)
+
+template<int bIdx, int uIdx, int yIdx>
+inline void cvtYUV422toRGB(Mat& _dst, int _stride, const uchar* _yuv)
+{
+    YUV422toRGB888Invoker<bIdx, uIdx, yIdx> converter(&_dst, _stride, _yuv);
+#ifdef HAVE_TBB
+    if (_dst.total() >= MIN_SIZE_FOR_PARALLEL_YUV422_CONVERSION)
+        parallel_for(BlockedRange(0, _dst.rows), converter);
+    else
+#endif
+        converter(BlockedRange(0, _dst.rows));
+}
+
+template<int bIdx, int uIdx, int yIdx>
+inline void cvtYUV422toRGBA(Mat& _dst, int _stride, const uchar* _yuv)
+{
+    YUV422toRGBA8888Invoker<bIdx, uIdx, yIdx> converter(&_dst, _stride, _yuv);
+#ifdef HAVE_TBB
+    if (_dst.total() >= MIN_SIZE_FOR_PARALLEL_YUV422_CONVERSION)
+        parallel_for(BlockedRange(0, _dst.rows), converter);
+    else
+#endif
+        converter(BlockedRange(0, _dst.rows));
+}
 
 }//namespace cv
 
@@ -2794,7 +3154,12 @@ void cv::cvtColor( InputArray _src, OutputArray _dst, int code, int dcn )
             dst = _dst.getMat();
             
             if( depth == CV_8U )
-                CvtColorLoop(src, dst, RGB2RGB<uchar>(scn, dcn, bidx));
+            {
+#ifdef HAVE_TEGRA_OPTIMIZATION
+                if(!tegra::cvtBGR2RGB(src, dst, bidx))
+#endif
+                    CvtColorLoop(src, dst, RGB2RGB<uchar>(scn, dcn, bidx));
+            }
             else if( depth == CV_16U )
                 CvtColorLoop(src, dst, RGB2RGB<ushort>(scn, dcn, bidx));
             else
@@ -2806,6 +3171,12 @@ void cv::cvtColor( InputArray _src, OutputArray _dst, int code, int dcn )
             CV_Assert( (scn == 3 || scn == 4) && depth == CV_8U );
             _dst.create(sz, CV_8UC2);
             dst = _dst.getMat();
+
+#ifdef HAVE_TEGRA_OPTIMIZATION
+            if(code == CV_BGR2BGR565 || code == CV_BGRA2BGR565 || code == CV_RGB2BGR565  || code == CV_RGBA2BGR565)
+                if(tegra::cvtRGB2RGB565(src, dst, code == CV_RGB2BGR565 || code == CV_RGBA2BGR565 ? 0 : 2))
+                    break;
+#endif
         
             CvtColorLoop(src, dst, RGB2RGB5x5(scn,
                       code == CV_BGR2BGR565 || code == CV_BGR2BGR555 ||
@@ -2817,7 +3188,7 @@ void cv::cvtColor( InputArray _src, OutputArray _dst, int code, int dcn )
         
         case CV_BGR5652BGR: case CV_BGR5552BGR: case CV_BGR5652RGB: case CV_BGR5552RGB:
         case CV_BGR5652BGRA: case CV_BGR5552BGRA: case CV_BGR5652RGBA: case CV_BGR5552RGBA:
-            if(dcn <= 0) dcn = 3;
+            if(dcn <= 0) dcn = (code==CV_BGR5652BGRA || code==CV_BGR5552BGRA || code==CV_BGR5652RGBA || code==CV_BGR5552RGBA) ? 4 : 3;
             CV_Assert( (dcn == 3 || dcn == 4) && scn == 2 && depth == CV_8U );
             _dst.create(sz, CV_MAKETYPE(depth, dcn));
             dst = _dst.getMat();
@@ -2838,7 +3209,12 @@ void cv::cvtColor( InputArray _src, OutputArray _dst, int code, int dcn )
             bidx = code == CV_BGR2GRAY || code == CV_BGRA2GRAY ? 0 : 2;
             
             if( depth == CV_8U )
+            {
+#ifdef HAVE_TEGRA_OPTIMIZATION
+                if(!tegra::cvtRGB2Gray(src, dst, bidx))
+#endif
                 CvtColorLoop(src, dst, RGB2Gray<uchar>(scn, bidx, 0));
+            }
             else if( depth == CV_16U )
                 CvtColorLoop(src, dst, RGB2Gray<ushort>(scn, bidx, 0));
             else
@@ -2854,13 +3230,18 @@ void cv::cvtColor( InputArray _src, OutputArray _dst, int code, int dcn )
             break;
         
         case CV_GRAY2BGR: case CV_GRAY2BGRA:
-            if( dcn <= 0 ) dcn = 3;
+            if( dcn <= 0 ) dcn = (code==CV_GRAY2BGRA) ? 4 : 3;
             CV_Assert( scn == 1 && (dcn == 3 || dcn == 4));
             _dst.create(sz, CV_MAKETYPE(depth, dcn));
             dst = _dst.getMat();
             
             if( depth == CV_8U )
+            {
+#ifdef HAVE_TEGRA_OPTIMIZATION
+                if(!tegra::cvtGray2RGB(src, dst))
+#endif
                 CvtColorLoop(src, dst, Gray2RGB<uchar>(dcn));
+            }
             else if( depth == CV_16U )
                 CvtColorLoop(src, dst, Gray2RGB<ushort>(dcn));
             else
@@ -2889,7 +3270,13 @@ void cv::cvtColor( InputArray _src, OutputArray _dst, int code, int dcn )
             dst = _dst.getMat();
             
             if( depth == CV_8U )
+            {
+#ifdef HAVE_TEGRA_OPTIMIZATION
+                if((code == CV_RGB2YCrCb || code == CV_BGR2YCrCb) && tegra::cvtRGB2YCrCb(src, dst, bidx))
+                    break;
+#endif
                 CvtColorLoop(src, dst, RGB2YCrCb_i<uchar>(scn, bidx, coeffs_i));
+            }
             else if( depth == CV_16U )
                 CvtColorLoop(src, dst, RGB2YCrCb_i<ushort>(scn, bidx, coeffs_i));
             else
@@ -2966,6 +3353,10 @@ void cv::cvtColor( InputArray _src, OutputArray _dst, int code, int dcn )
             if( code == CV_BGR2HSV || code == CV_RGB2HSV ||
                 code == CV_BGR2HSV_FULL || code == CV_RGB2HSV_FULL )
             {
+#ifdef HAVE_TEGRA_OPTIMIZATION
+				if(tegra::cvtRGB2HSV(src, dst, bidx, hrange))
+                    break;
+#endif
                 if( depth == CV_8U )
                     CvtColorLoop(src, dst, RGB2HSV_b(scn, bidx, hrange));
                 else
@@ -3112,52 +3503,141 @@ void cv::cvtColor( InputArray _src, OutputArray _dst, int code, int dcn )
                 Bayer2RGB_VNG_8u(src, dst, code);
             }
             break;
-        case CV_YUV420sp2BGR: case CV_YUV420sp2RGB: case CV_YUV420i2BGR: case CV_YUV420i2RGB:
+        case CV_YUV2BGR_NV21:  case CV_YUV2RGB_NV21:  case CV_YUV2BGR_NV12:  case CV_YUV2RGB_NV12:
+        case CV_YUV2BGRA_NV21: case CV_YUV2RGBA_NV21: case CV_YUV2BGRA_NV12: case CV_YUV2RGBA_NV12:
             {
-                if(dcn <= 0) dcn = 3;
+                // http://www.fourcc.org/yuv.php#NV21 == yuv420sp -> a plane of 8 bit Y samples followed by an interleaved V/U plane containing 8 bit 2x2 subsampled chroma samples
+                // http://www.fourcc.org/yuv.php#NV12 -> a plane of 8 bit Y samples followed by an interleaved U/V plane containing 8 bit 2x2 subsampled colour difference samples
+                
+                if (dcn <= 0) dcn = (code==CV_YUV420sp2BGRA || code==CV_YUV420sp2RGBA || code==CV_YUV2BGRA_NV12 || code==CV_YUV2RGBA_NV12) ? 4 : 3;
+                const int bidx = (code==CV_YUV2BGR_NV21 || code==CV_YUV2BGRA_NV21 || code==CV_YUV2BGR_NV12 || code==CV_YUV2BGRA_NV12) ? 0 : 2;
+                const int uidx = (code==CV_YUV2BGR_NV21 || code==CV_YUV2BGRA_NV21 || code==CV_YUV2RGB_NV21 || code==CV_YUV2RGBA_NV21) ? 1 : 0;
+                
                 CV_Assert( dcn == 3 || dcn == 4 );
-                CV_Assert( sz.width % 2 == 0 && sz.height % 3 == 0 && depth == CV_8U && src.isContinuous() );
-
+                CV_Assert( sz.width % 2 == 0 && sz.height % 3 == 0 && depth == CV_8U );
+                
                 Size dstSz(sz.width, sz.height * 2 / 3);
-                _dst.create( dstSz, CV_MAKETYPE(depth, dcn));
+                _dst.create(dstSz, CV_MAKETYPE(depth, dcn));
                 dst = _dst.getMat();
 
+                int srcstep = (int)src.step;
                 const uchar* y = src.ptr();
-                const uchar* uv = y + dstSz.area();
-
-#ifdef HAVE_TEGRA_OPTIMIZATION
-                if (!tegra::YUV420i2BGR(y, uv, dst, CV_YUV420sp2RGB == code))
-#endif
+                const uchar* uv = y + srcstep * dstSz.height;
+                
+                switch(dcn*100 + bidx * 10 + uidx)
                 {
-                    if (CV_YUV420sp2RGB == code)
-                    {
-                        if (dcn == 3)
-                            parallel_for(BlockedRange(0, dstSz.height, 2), YUV4202BGR888Invoker<2,0>(dst, dstSz.width, y, uv));
-                        else
-                            parallel_for(BlockedRange(0, dstSz.height, 2), YUV4202BGRA8888Invoker<2,0>(dst, dstSz.width, y, uv));
-                    }
-                    else if (CV_YUV420sp2BGR == code)
-                    {
-                        if (dcn == 3)
-                            parallel_for(BlockedRange(0, dstSz.height, 2), YUV4202BGR888Invoker<0,0>(dst, dstSz.width, y, uv));
-                        else
-                            parallel_for(BlockedRange(0, dstSz.height, 2), YUV4202BGRA8888Invoker<0,0>(dst, dstSz.width, y, uv));
-                    }
-                    else if (CV_YUV420i2RGB == code)
-                    {
-                        if (dcn == 3)
-                            parallel_for(BlockedRange(0, dstSz.height, 2), YUV4202BGR888Invoker<2,1>(dst, dstSz.width, y, uv));
-                        else
-                            parallel_for(BlockedRange(0, dstSz.height, 2), YUV4202BGRA8888Invoker<2,1>(dst, dstSz.width, y, uv));
-                    }
-                    else if (CV_YUV420i2BGR == code)
-                    {
-                        if (dcn == 3)
-                            parallel_for(BlockedRange(0, dstSz.height, 2), YUV4202BGR888Invoker<0,1>(dst, dstSz.width, y, uv));
-                        else
-                            parallel_for(BlockedRange(0, dstSz.height, 2), YUV4202BGRA8888Invoker<0,1>(dst, dstSz.width, y, uv));
-                    }
-                }
+                    case 300: cvtYUV420sp2RGB<0, 0> (dst, srcstep, y, uv); break;
+                    case 301: cvtYUV420sp2RGB<0, 1> (dst, srcstep, y, uv); break;
+                    case 320: cvtYUV420sp2RGB<2, 0> (dst, srcstep, y, uv); break;
+                    case 321: cvtYUV420sp2RGB<2, 1> (dst, srcstep, y, uv); break;
+                    case 400: cvtYUV420sp2RGBA<0, 0>(dst, srcstep, y, uv); break;
+                    case 401: cvtYUV420sp2RGBA<0, 1>(dst, srcstep, y, uv); break;
+                    case 420: cvtYUV420sp2RGBA<2, 0>(dst, srcstep, y, uv); break;
+                    case 421: cvtYUV420sp2RGBA<2, 1>(dst, srcstep, y, uv); break;
+                    default: CV_Error( CV_StsBadFlag, "Unknown/unsupported color conversion code" ); break;
+                };
+            }
+            break;
+        case CV_YUV2BGR_YV12: case CV_YUV2RGB_YV12: case CV_YUV2BGRA_YV12: case CV_YUV2RGBA_YV12:
+        case CV_YUV2BGR_IYUV: case CV_YUV2RGB_IYUV: case CV_YUV2BGRA_IYUV: case CV_YUV2RGBA_IYUV:
+            {
+                //http://www.fourcc.org/yuv.php#YV12 == yuv420p -> It comprises an NxM Y plane followed by (N/2)x(M/2) V and U planes.
+                //http://www.fourcc.org/yuv.php#IYUV == I420 -> It comprises an NxN Y plane followed by (N/2)x(N/2) U and V planes
+                
+                if (dcn <= 0) dcn = (code==CV_YUV2BGRA_YV12 || code==CV_YUV2RGBA_YV12 || code==CV_YUV2RGBA_IYUV || code==CV_YUV2BGRA_IYUV) ? 4 : 3;
+                const int bidx = (code==CV_YUV2BGR_YV12 || code==CV_YUV2BGRA_YV12 || code==CV_YUV2BGR_IYUV || code==CV_YUV2BGRA_IYUV) ? 0 : 2;
+                const int uidx = (code==CV_YUV2BGR_YV12 || code==CV_YUV2RGB_YV12 || code==CV_YUV2BGRA_YV12 || code==CV_YUV2RGBA_YV12) ? 1 : 0;
+                
+                CV_Assert( dcn == 3 || dcn == 4 );
+                CV_Assert( sz.width % 2 == 0 && sz.height % 3 == 0 && depth == CV_8U );
+
+                Size dstSz(sz.width, sz.height * 2 / 3);
+                _dst.create(dstSz, CV_MAKETYPE(depth, dcn));
+                dst = _dst.getMat();
+                
+                int srcstep = (int)src.step;
+                const uchar* y = src.ptr();
+                const uchar* u = y + srcstep * dstSz.height;
+                const uchar* v = y + srcstep * (dstSz.height + dstSz.height/4) + (dstSz.width/2) * ((dstSz.height % 4)/2);
+                
+                int ustepIdx = 0;
+                int vstepIdx = dstSz.height % 4 == 2 ? 1 : 0;
+                
+                if(uidx == 1) { std::swap(u ,v), std::swap(ustepIdx, vstepIdx); };
+                
+                switch(dcn*10 + bidx)
+                {
+                    case 30: cvtYUV420p2RGB<0>(dst, srcstep, y, u, v, ustepIdx, vstepIdx); break;
+                    case 32: cvtYUV420p2RGB<2>(dst, srcstep, y, u, v, ustepIdx, vstepIdx); break;
+                    case 40: cvtYUV420p2RGBA<0>(dst, srcstep, y, u, v, ustepIdx, vstepIdx); break;
+                    case 42: cvtYUV420p2RGBA<2>(dst, srcstep, y, u, v, ustepIdx, vstepIdx); break;
+                    default: CV_Error( CV_StsBadFlag, "Unknown/unsupported color conversion code" ); break;
+                };
+            }
+            break;
+        case CV_YUV2GRAY_420:
+            {
+                if (dcn <= 0) dcn = 1;
+                
+                CV_Assert( dcn == 1 );
+                CV_Assert( sz.width % 2 == 0 && sz.height % 3 == 0 && depth == CV_8U );
+
+                Size dstSz(sz.width, sz.height * 2 / 3);
+                _dst.create(dstSz, CV_MAKETYPE(depth, dcn));
+                dst = _dst.getMat();
+                
+                src(Range(0, dstSz.height), Range::all()).copyTo(dst);
+            }
+            break;
+        case CV_YUV2RGB_UYVY: case CV_YUV2BGR_UYVY: case CV_YUV2RGBA_UYVY: case CV_YUV2BGRA_UYVY:
+        case CV_YUV2RGB_YUY2: case CV_YUV2BGR_YUY2: case CV_YUV2RGB_YVYU: case CV_YUV2BGR_YVYU:
+        case CV_YUV2RGBA_YUY2: case CV_YUV2BGRA_YUY2: case CV_YUV2RGBA_YVYU: case CV_YUV2BGRA_YVYU:
+            {
+                //http://www.fourcc.org/yuv.php#UYVY
+                //http://www.fourcc.org/yuv.php#YUY2
+                //http://www.fourcc.org/yuv.php#YVYU 
+                
+                if (dcn <= 0) dcn = (code==CV_YUV2RGBA_UYVY || code==CV_YUV2BGRA_UYVY || code==CV_YUV2RGBA_YUY2 || code==CV_YUV2BGRA_YUY2 || code==CV_YUV2RGBA_YVYU || code==CV_YUV2BGRA_YVYU) ? 4 : 3;
+                const int bidx = (code==CV_YUV2BGR_UYVY || code==CV_YUV2BGRA_UYVY || code==CV_YUV2BGR_YUY2 || code==CV_YUV2BGRA_YUY2 || code==CV_YUV2BGR_YVYU || code==CV_YUV2BGRA_YVYU) ? 0 : 2;
+                const int ycn = (code==CV_YUV2RGB_UYVY || code==CV_YUV2BGR_UYVY || code==CV_YUV2RGBA_UYVY || code==CV_YUV2BGRA_UYVY) ? 1 : 0;
+                const int uidx = (code==CV_YUV2RGB_YVYU || code==CV_YUV2BGR_YVYU || code==CV_YUV2RGBA_YVYU || code==CV_YUV2BGRA_YVYU) ? 1 : 0;
+                
+                CV_Assert( dcn == 3 || dcn == 4 );
+                CV_Assert( scn == 2 && depth == CV_8U );
+
+                _dst.create(sz, CV_8UC(dcn));
+                dst = _dst.getMat();
+                
+                switch(dcn*1000 + bidx*100 + uidx*10 + ycn)
+                {
+                    case 3000: cvtYUV422toRGB<0,0,0>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 3001: cvtYUV422toRGB<0,0,1>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 3010: cvtYUV422toRGB<0,1,0>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 3011: cvtYUV422toRGB<0,1,1>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 3200: cvtYUV422toRGB<2,0,0>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 3201: cvtYUV422toRGB<2,0,1>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 3210: cvtYUV422toRGB<2,1,0>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 3211: cvtYUV422toRGB<2,1,1>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 4000: cvtYUV422toRGBA<0,0,0>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 4001: cvtYUV422toRGBA<0,0,1>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 4010: cvtYUV422toRGBA<0,1,0>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 4011: cvtYUV422toRGBA<0,1,1>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 4200: cvtYUV422toRGBA<2,0,0>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 4201: cvtYUV422toRGBA<2,0,1>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 4210: cvtYUV422toRGBA<2,1,0>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    case 4211: cvtYUV422toRGBA<2,1,1>(dst, (int)src.step, src.ptr<uchar>()); break;
+                    default: CV_Error( CV_StsBadFlag, "Unknown/unsupported color conversion code" ); break;
+                };
+            }
+            break;
+        case CV_YUV2GRAY_UYVY: case CV_YUV2GRAY_YUY2:
+            {
+                if (dcn <= 0) dcn = 1;
+                
+                CV_Assert( dcn == 1 );
+                CV_Assert( scn == 2 && depth == CV_8U );
+
+                extractChannel(_src, _dst, code == CV_YUV2GRAY_UYVY ? 1 : 0);
             }
             break;
         default:

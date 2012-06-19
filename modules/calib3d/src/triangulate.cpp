@@ -134,6 +134,8 @@ cvTriangulatePoints(CvMat* projMatr1, CvMat* projMatr2, CvMat* projPoints1, CvMa
         }
     }
     
+#if 0
+    double err = 0;
     /* Points was reconstructed. Try to reproject points */
     /* We can compute reprojection error if need */
     {
@@ -172,9 +174,11 @@ cvTriangulatePoints(CvMat* projMatr1, CvMat* projMatr2, CvMat* projPoints1, CvMa
                 float deltaX,deltaY;
                 deltaX = (float)fabs(x-xr);
                 deltaY = (float)fabs(y-yr);
+                err += deltaX*deltaX + deltaY*deltaY;
             }
         }
     }
+#endif
 }
 
 
@@ -187,8 +191,8 @@ cvTriangulatePoints(CvMat* projMatr1, CvMat* projMatr2, CvMat* projPoints1, CvMa
  *		new_points2' * F * new_points1 = 0.
  *
  *		F_			:	3x3 fundamental matrix
- *		points1_	:	2xN matrix containing the first set of points
- *		points2_	:	2xN matrix containing the second set of points
+ *		points1_	:	1xN matrix containing the first set of points
+ *		points2_	:	1xN matrix containing the second set of points
  *		new_points1	:	the optimized points1_. if this is NULL, the corrected points are placed back in points1_
  *		new_points2	:	the optimized points2_. if this is NULL, the corrected points are placed back in points2_
  */
@@ -214,7 +218,7 @@ cvCorrectMatches(CvMat *F_, CvMat *points1_, CvMat *points2_, CvMat *new_points1
     if (!(((F_->type & CV_MAT_TYPE_MASK) >> 3) == 0 ))
         CV_Error( CV_StsUnsupportedFormat, "The fundamental matrix must be a single-channel matrix" );
     if (!(points1_->rows == 1 && points2_->rows == 1 && points1_->cols == points2_->cols))
-        CV_Error( CV_StsUnmatchedSizes, "The point-matrices must have two rows, and an equal number of columns" );
+        CV_Error( CV_StsUnmatchedSizes, "The point-matrices must have one row, and an equal number of columns" );
     if (((points1_->type & CV_MAT_TYPE_MASK) >> 3) != 1 )
         CV_Error( CV_StsUnmatchedSizes, "The first set of points must contain two channels; one for x and one for y" );
     if (((points2_->type & CV_MAT_TYPE_MASK) >> 3) != 1 )
@@ -402,4 +406,35 @@ cvCorrectMatches(CvMat *F_, CvMat *points1_, CvMat *points2_, CvMat *new_points1
         cvConvert( points1, new_points1 );
     if( new_points2 )
         cvConvert( points2, new_points2 );
+}
+
+void cv::triangulatePoints( InputArray _projMatr1, InputArray _projMatr2,
+                            InputArray _projPoints1, InputArray _projPoints2,
+                            OutputArray _points4D )
+{
+    Mat matr1 = _projMatr1.getMat(), matr2 = _projMatr2.getMat();
+    Mat points1 = _projPoints1.getMat(), points2 = _projPoints2.getMat();
+
+    CvMat cvMatr1 = matr1, cvMatr2 = matr2;
+    CvMat cvPoints1 = points1, cvPoints2 = points2;
+
+    _points4D.create(4, points1.cols, points1.type());
+    CvMat cvPoints4D = _points4D.getMat();
+
+    cvTriangulatePoints(&cvMatr1, &cvMatr2, &cvPoints1, &cvPoints2, &cvPoints4D);
+}
+
+void cv::correctMatches( InputArray _F, InputArray _points1, InputArray _points2,
+                         OutputArray _newPoints1, OutputArray _newPoints2 )
+{
+    Mat F = _F.getMat();
+    Mat points1 = _points1.getMat(), points2 = _points2.getMat();
+    CvMat cvPoints1 = points1, cvPoints2 = points2;
+    CvMat cvF = F;
+
+    _newPoints1.create(points1.size(), points1.type());
+    _newPoints2.create(points2.size(), points2.type());
+    CvMat cvNewPoints1 = _newPoints1.getMat(), cvNewPoints2 = _newPoints2.getMat();
+
+    cvCorrectMatches(&cvF, &cvPoints1, &cvPoints2, &cvNewPoints1, &cvNewPoints2);
 }

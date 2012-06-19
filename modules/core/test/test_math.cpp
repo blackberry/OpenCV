@@ -1802,6 +1802,7 @@ Core_MatrixTest( 1, 4, false, false, 1 ),
 flags(0), have_u(false), have_v(false), symmetric(false), compact(false), vector_w(false)
 {
     test_case_count = 100;
+    max_log_array_size = 8;
     test_array[TEMP].push_back(NULL);
     test_array[TEMP].push_back(NULL);
     test_array[TEMP].push_back(NULL);
@@ -1932,10 +1933,9 @@ void Core_SVDTest::prepare_to_validation( int /*test_case_idx*/ )
 {
     Mat& input = test_mat[INPUT][0];
     int depth = input.depth();
-    int m = input.rows, n = input.cols, min_size = MIN(m, n);
+    int i, m = input.rows, n = input.cols, min_size = MIN(m, n);
     Mat *src, *dst, *w;
     double prev = 0, threshold = depth == CV_32F ? FLT_EPSILON : DBL_EPSILON;
-    int i, step;
     
     if( have_u )
     {
@@ -1954,7 +1954,6 @@ void Core_SVDTest::prepare_to_validation( int /*test_case_idx*/ )
     }
     
     w = &test_mat[TEMP][0];
-    step = w->rows == 1 ? 1 : (int)w->step1();
     for( i = 0; i < min_size; i++ )
     {
         double normval = 0, aii;
@@ -2153,7 +2152,7 @@ void Core_SVBkSbTest::prepare_to_validation( int )
     CvMat _w = w, _wdb = wdb;
     // use exactly the same threshold as in icvSVD... ,
     // so the changes in the library and here should be synchronized.
-    double threshold = cv::sum(w)[0]*(is_float ? FLT_EPSILON*10 : DBL_EPSILON*2);
+    double threshold = cv::sum(w)[0]*(DBL_EPSILON*2);//(is_float ? FLT_EPSILON*10 : DBL_EPSILON*2);
     
     wdb = Scalar::all(0);
     for( i = 0; i < min_size; i++ )
@@ -2349,6 +2348,110 @@ void Core_SolvePolyTest::run( int )
     }
 }
 
+class Core_CheckRange_Empty : public cvtest::BaseTest
+{
+public:
+    Core_CheckRange_Empty(){}
+    ~Core_CheckRange_Empty(){}
+protected:
+    virtual void run( int start_from );
+};
+
+void Core_CheckRange_Empty::run( int )
+{
+    cv::Mat m;
+    ASSERT_TRUE( cv::checkRange(m) );
+}
+
+TEST(Core_CheckRange_Empty, accuracy) { Core_CheckRange_Empty test; test.safe_run(); }
+
+class Core_CheckRange_INT_MAX : public cvtest::BaseTest
+{
+public:
+    Core_CheckRange_INT_MAX(){}
+    ~Core_CheckRange_INT_MAX(){}
+protected:
+    virtual void run( int start_from );
+};
+
+void Core_CheckRange_INT_MAX::run( int )
+{
+    cv::Mat m(3, 3, CV_32SC1, cv::Scalar(INT_MAX));
+    ASSERT_FALSE( cv::checkRange(m, true, 0, 0, INT_MAX) );
+    ASSERT_TRUE( cv::checkRange(m) );
+}
+
+TEST(Core_CheckRange_INT_MAX, accuracy) { Core_CheckRange_INT_MAX test; test.safe_run(); }
+
+template <typename T> class Core_CheckRange : public testing::Test {};
+
+TYPED_TEST_CASE_P(Core_CheckRange);
+
+TYPED_TEST_P(Core_CheckRange, Negative)
+{
+    double min_bound = 4.5;
+    double max_bound = 16.0;
+
+    TypeParam data[] = {5, 10, 15, 4, 10 ,2, 8, 12, 14};
+    cv::Mat src = cv::Mat(3,3, cv::DataDepth<TypeParam>::value, data);
+
+    cv::Point* bad_pt = new cv::Point(0, 0);  
+
+    ASSERT_FALSE(checkRange(src, true, bad_pt, min_bound, max_bound));
+    ASSERT_EQ(bad_pt->x,0);
+    ASSERT_EQ(bad_pt->y,1);
+
+    delete bad_pt;
+}
+
+TYPED_TEST_P(Core_CheckRange, Positive)
+{
+    double min_bound = -1;
+    double max_bound = 16.0;
+
+    TypeParam data[] = {5, 10, 15, 4, 10 ,2, 8, 12, 14};
+    cv::Mat src = cv::Mat(3,3, cv::DataDepth<TypeParam>::value, data);
+
+    cv::Point* bad_pt = new cv::Point(0, 0);  
+
+    ASSERT_TRUE(checkRange(src, true, bad_pt, min_bound, max_bound));
+    ASSERT_EQ(bad_pt->x,0);
+    ASSERT_EQ(bad_pt->y,0);
+
+    delete bad_pt;
+}
+
+TYPED_TEST_P(Core_CheckRange, Bounds)
+{
+    double min_bound = 24.5;
+    double max_bound = 1.0;
+
+    TypeParam data[] = {5, 10, 15, 4, 10 ,2, 8, 12, 14};
+    cv::Mat src = cv::Mat(3,3, cv::DataDepth<TypeParam>::value, data);
+
+    cv::Point* bad_pt = new cv::Point(0, 0);    
+
+    ASSERT_FALSE(checkRange(src, true, bad_pt, min_bound, max_bound));
+    ASSERT_EQ(bad_pt->x,0);
+    ASSERT_EQ(bad_pt->y,0);
+
+    delete bad_pt;
+}
+
+TYPED_TEST_P(Core_CheckRange, Zero)
+{
+    double min_bound = 0.0;
+    double max_bound = 0.1;
+
+    cv::Mat src = cv::Mat::zeros(3,3, cv::DataDepth<TypeParam>::value);
+
+    ASSERT_TRUE( checkRange(src, true, NULL, min_bound, max_bound) );
+}
+
+REGISTER_TYPED_TEST_CASE_P(Core_CheckRange, Negative, Positive, Bounds, Zero);
+
+typedef ::testing::Types<signed char,unsigned char, signed short, unsigned short, signed int> mat_data_types;
+INSTANTIATE_TYPED_TEST_CASE_P(Negative_Test, Core_CheckRange, mat_data_types);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -2370,6 +2473,130 @@ TEST(Core_Trace, accuracy) { Core_TraceTest test; test.safe_run(); }
 TEST(Core_SolvePoly, accuracy) { Core_SolvePolyTest test; test.safe_run(); }
 
 // TODO: eigenvv, invsqrt, cbrt, fastarctan, (round, floor, ceil(?)),
+
+
+class CV_KMeansSingularTest : public cvtest::BaseTest
+{
+public:
+    CV_KMeansSingularTest() {}
+    ~CV_KMeansSingularTest() {}   
+protected:
+    void run(int)
+    {
+        int i, iter = 0, N = 0, N0 = 0, K = 0, dims = 0;
+        Mat labels;
+        try
+        {
+            RNG& rng = theRNG();
+            const int MAX_DIM=5;
+            int MAX_POINTS = 100, maxIter = 100;
+            for( iter = 0; iter < maxIter; iter++ )
+            {
+                ts->update_context(this, iter, true);
+                dims = rng.uniform(1, MAX_DIM+1);
+                N = rng.uniform(1, MAX_POINTS+1);
+                N0 = rng.uniform(1, MAX(N/10, 2));
+                K = rng.uniform(1, N+1);
+                
+                Mat data0(N0, dims, CV_32F);
+                rng.fill(data0, RNG::UNIFORM, -1, 1);
+                
+                Mat data(N, dims, CV_32F);
+                for( i = 0; i < N; i++ )
+                    data0.row(rng.uniform(0, N0)).copyTo(data.row(i));
+                
+                kmeans(data, K, labels, TermCriteria(TermCriteria::MAX_ITER+TermCriteria::EPS, 30, 0),
+                       5, KMEANS_PP_CENTERS);
+                
+                Mat hist(K, 1, CV_32S, Scalar(0));
+                for( i = 0; i < N; i++ )
+                {
+                    int l = labels.at<int>(i);
+                    CV_Assert(0 <= l && l < K);
+                    hist.at<int>(l)++;
+                }
+                for( i = 0; i < K; i++ )
+                    CV_Assert( hist.at<int>(i) != 0 );
+            }
+        }
+        catch(...)
+        {
+            ts->printf(cvtest::TS::LOG,
+                       "context: iteration=%d, N=%d, N0=%d, K=%d\n",
+                       iter, N, N0, K);
+            std::cout << labels << std::endl;
+            ts->set_failed_test_info(cvtest::TS::FAIL_MISMATCH);
+        }
+    }
+};
+
+TEST(Core_KMeans, singular) { CV_KMeansSingularTest test; test.safe_run(); }
+
+TEST(CovariationMatrixVectorOfMat, accuracy)
+{
+    unsigned int col_problem_size = 8, row_problem_size = 8, vector_size = 16;
+    cv::Mat src(vector_size, col_problem_size * row_problem_size, CV_32F);
+    int singleMatFlags = CV_COVAR_ROWS;
+
+    cv::Mat gold;
+    cv::Mat goldMean;
+    cv::randu(src,cv::Scalar(-128), cv::Scalar(128));
+    cv::calcCovarMatrix(src,gold,goldMean,singleMatFlags,CV_32F);
+    std::vector<cv::Mat> srcVec;
+    for(size_t i = 0; i < vector_size; i++)
+    {
+        srcVec.push_back(src.row(static_cast<int>(i)).reshape(0,col_problem_size));
+    }
+
+    cv::Mat actual;
+    cv::Mat actualMean;
+    cv::calcCovarMatrix(srcVec, actual, actualMean,singleMatFlags,CV_32F);
+
+    cv::Mat diff;
+    cv::absdiff(gold, actual, diff);
+    cv::Scalar s = cv::sum(diff);
+    ASSERT_EQ(s.dot(s), 0.0);
+
+    cv::Mat meanDiff;
+    cv::absdiff(goldMean, actualMean.reshape(0,1), meanDiff);
+    cv::Scalar sDiff = cv::sum(meanDiff);
+    ASSERT_EQ(sDiff.dot(sDiff), 0.0);
+}
+
+TEST(CovariationMatrixVectorOfMatWithMean, accuracy)
+{
+    unsigned int col_problem_size = 8, row_problem_size = 8, vector_size = 16;
+    cv::Mat src(vector_size, col_problem_size * row_problem_size, CV_32F);
+    int singleMatFlags = CV_COVAR_ROWS | CV_COVAR_USE_AVG;
+
+    cv::Mat gold;
+    cv::randu(src,cv::Scalar(-128), cv::Scalar(128));
+    cv::Mat goldMean;
+
+    cv::reduce(src,goldMean,0 ,CV_REDUCE_AVG, CV_32F);
+
+    cv::calcCovarMatrix(src,gold,goldMean,singleMatFlags,CV_32F);
+
+    std::vector<cv::Mat> srcVec;
+    for(size_t i = 0; i < vector_size; i++)
+    {
+        srcVec.push_back(src.row(static_cast<int>(i)).reshape(0,col_problem_size));
+    }
+
+    cv::Mat actual;
+    cv::Mat actualMean = goldMean.reshape(0, row_problem_size);
+    cv::calcCovarMatrix(srcVec, actual, actualMean,singleMatFlags,CV_32F);
+
+    cv::Mat diff;
+    cv::absdiff(gold, actual, diff);
+    cv::Scalar s = cv::sum(diff);
+    ASSERT_EQ(s.dot(s), 0.0);
+
+    cv::Mat meanDiff;
+    cv::absdiff(goldMean, actualMean.reshape(0,1), meanDiff);
+    cv::Scalar sDiff = cv::sum(meanDiff);
+    ASSERT_EQ(sDiff.dot(sDiff), 0.0);
+}
 
 /* End of file. */
 

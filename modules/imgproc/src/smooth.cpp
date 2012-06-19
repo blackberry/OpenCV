@@ -279,7 +279,7 @@ cv::Ptr<cv::FilterEngine> cv::createBoxFilter( int srcType, int dstType, Size ks
 {
     int sdepth = CV_MAT_DEPTH(srcType);
     int cn = CV_MAT_CN(srcType), sumType = CV_64F;
-    if( sdepth < CV_32S && (!normalize ||
+    if( sdepth <= CV_32S && (!normalize ||
         ksize.width*ksize.height <= (sdepth == CV_8U ? (1<<23) :
             sdepth == CV_16U ? (1 << 15) : (1 << 16))) )
         sumType = CV_32S;
@@ -311,6 +311,11 @@ void cv::boxFilter( InputArray _src, OutputArray _dst, int ddepth,
         if( src.cols == 1 )
             ksize.width = 1;
     }
+#ifdef HAVE_TEGRA_OPTIMIZATION
+    if ( tegra::box(src, dst, ksize, anchor, normalize, borderType) )
+        return;
+#endif
+
     Ptr<FilterEngine> f = createBoxFilter( src.type(), dst.type(),
                         ksize, anchor, normalize, borderType );
     f->apply( src, dst );
@@ -418,12 +423,6 @@ void cv::GaussianBlur( InputArray _src, OutputArray _dst, Size ksize,
     _dst.create( src.size(), src.type() );
     Mat dst = _dst.getMat();
     
-    if( ksize.width == 1 && ksize.height == 1 )
-    {
-        src.copyTo(dst);
-        return;
-    }
-
     if( borderType != BORDER_CONSTANT )
     {
         if( src.rows == 1 )
@@ -431,6 +430,18 @@ void cv::GaussianBlur( InputArray _src, OutputArray _dst, Size ksize,
         if( src.cols == 1 )
             ksize.width = 1;
     }
+
+    if( ksize.width == 1 && ksize.height == 1 )
+    {
+        src.copyTo(dst);
+        return;
+    }
+
+#ifdef HAVE_TEGRA_OPTIMIZATION
+    if(sigma1 == 0 && sigma2 == 0 && tegra::gaussian(src, dst, ksize, borderType))
+        return;
+#endif
+
     Ptr<FilterEngine> f = createGaussianFilter( src.type(), ksize, sigma1, sigma2, borderType );
     f->apply( src, dst );
 }
@@ -1232,9 +1243,12 @@ void cv::medianBlur( InputArray _src0, OutputArray _dst, int ksize )
     }
 
     CV_Assert( ksize % 2 == 1 );
+
+#ifdef HAVE_TEGRA_OPTIMIZATION
+    if (tegra::medianBlur(src0, dst, ksize))
+        return;
+#endif
     
-    Size size = src0.size();
-    int cn = src0.channels();
     bool useSortNet = ksize == 3 || (ksize == 5
 #if !CV_SSE2
             && src0.depth() > CV_8U
@@ -1248,12 +1262,7 @@ void cv::medianBlur( InputArray _src0, OutputArray _dst, int ksize )
             src = src0;
         else
             src0.copyTo(src);
-    }
-    else
-        cv::copyMakeBorder( src0, src, 0, 0, ksize/2, ksize/2, BORDER_REPLICATE );
 
-    if( useSortNet )
-    {
         if( src.depth() == CV_8U )
             medianBlur_SortNet<MinMax8u, MinMaxVec8u>( src, dst, ksize );
         else if( src.depth() == CV_16U )
@@ -1264,16 +1273,22 @@ void cv::medianBlur( InputArray _src0, OutputArray _dst, int ksize )
             medianBlur_SortNet<MinMax32f, MinMaxVec32f>( src, dst, ksize );
         else
             CV_Error(CV_StsUnsupportedFormat, "");
+
         return;
     }
-
-    CV_Assert( src.depth() == CV_8U && (cn == 1 || cn == 3 || cn == 4) );
-
-    double img_size_mp = (double)(size.width*size.height)/(1 << 20);
-    if( ksize <= 3 + (img_size_mp < 1 ? 12 : img_size_mp < 4 ? 6 : 2)*(MEDIAN_HAVE_SIMD && checkHardwareSupport(CV_CPU_SSE2) ? 1 : 3))
-        medianBlur_8u_Om( src, dst, ksize );
     else
-        medianBlur_8u_O1( src, dst, ksize );
+    {
+        cv::copyMakeBorder( src0, src, 0, 0, ksize/2, ksize/2, BORDER_REPLICATE );
+
+        int cn = src0.channels();
+        CV_Assert( src.depth() == CV_8U && (cn == 1 || cn == 3 || cn == 4) );
+
+        double img_size_mp = (double)(src0.total())/(1 << 20);
+        if( ksize <= 3 + (img_size_mp < 1 ? 12 : img_size_mp < 4 ? 6 : 2)*(MEDIAN_HAVE_SIMD && checkHardwareSupport(CV_CPU_SSE2) ? 1 : 3))
+            medianBlur_8u_Om( src, dst, ksize );
+        else
+            medianBlur_8u_O1( src, dst, ksize );
+    }
 }
 
 /****************************************************************************************\
@@ -1424,6 +1439,7 @@ bilateralFilter_32f( const Mat& src, Mat& dst, int d,
     // temporary copy of the image with borders for easy processing
     Mat temp;
     copyMakeBorder( src, temp, radius, radius, radius, radius, borderType );
+    patchNaNs(temp);
 
     // allocate lookup tables
     vector<float> _space_weight(d*d);

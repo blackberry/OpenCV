@@ -1066,7 +1066,7 @@ CvBoost::train( const CvMat* _train_data, int _tflag,
         if( !tree->train( data, subsample_mask, this ) )
         {
             delete tree;
-            continue;
+            break;
         }
         //cvCheckArr( get_weak_response());
         cvSeqPush( weak, &tree );
@@ -1126,7 +1126,7 @@ CvBoost::update_weights( CvBoostTree* tree )
     int *sample_idx_buf;
     const int* sample_idx = 0;
     cv::AutoBuffer<uchar> inn_buf;
-    int _buf_size = (params.boost_type == LOGIT) || (params.boost_type == GENTLE) ? data->sample_count*sizeof(int) : 0;
+    size_t _buf_size = (params.boost_type == LOGIT) || (params.boost_type == GENTLE) ? data->sample_count*sizeof(int) : 0;
     if( !tree )
         _buf_size += n*sizeof(int);
     else
@@ -1249,13 +1249,11 @@ CvBoost::update_weights( CvBoostTree* tree )
         // recent weak classifier we know the responses. For other samples we need to compute them
         if( have_subsample )
         {
-            float* values0, *values = (float*)cur_buf_pos;
+            float* values = (float*)cur_buf_pos;
             cur_buf_pos = (uchar*)(values + data->buf->step);
-            uchar* missing0, *missing = cur_buf_pos;
+            uchar* missing = cur_buf_pos;
             cur_buf_pos = missing + data->buf->step;
             CvMat _sample, _mask;
-            values0 = values;
-            missing0 = missing;
 
             // invert the subsample mask
             cvXorS( subsample_mask, cvScalar(1.), subsample_mask );

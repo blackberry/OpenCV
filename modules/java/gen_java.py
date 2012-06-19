@@ -12,7 +12,9 @@ class_ignore_list = (
     #highgui
     "VideoWriter", "VideoCapture",
     #features2d
-    "KeyPoint", "MSER", "StarDetector", "SURF",
+    #"KeyPoint", "MSER", "StarDetector", "SURF", "DMatch",
+    #ml
+    #"EM",
 )
 
 const_ignore_list = (
@@ -87,10 +89,12 @@ const_ignore_list = (
     "CV_L?(BGRA?|RGBA?|GRAY|XYZ|YCrCb|Luv|Lab|HLS|YUV|HSV)\d*2L?(BGRA?|RGBA?|GRAY|XYZ|YCrCb|Luv|Lab|HLS|YUV|HSV).*",
     "CV_COLORCVT_MAX",
     "CV_.*Bayer.*",
-    "CV_YUV420(i|sp)2.+",
+    "CV_YUV420(i|sp|p)2.+",
     "CV_TM_.+",
     "CV_FLOODFILL_.+",
     "CV_ADAPTIVE_THRESH_.+",
+    "WINDOW_.+",
+    "WND_PROP_.+",
 )
 
 const_private_list = (
@@ -121,7 +125,7 @@ missing_consts = \
         ), # private
         'public' :
         (
-            ('SVD_MODIFY_A', 1), ('SVD_NO_UV', 2), ('SVD_FULL_UV', 4), 
+            ('SVD_MODIFY_A', 1), ('SVD_NO_UV', 2), ('SVD_FULL_UV', 4),
             ('FILLED', -1),
             ('LINE_AA', 16), ('LINE_8', 8), ('LINE_4', 4),
             ('REDUCE_SUM', 0), ('REDUCE_AVG', 1), ('REDUCE_MAX', 2), ('REDUCE_MIN', 3),
@@ -169,6 +173,15 @@ missing_consts = \
         ) # public
     }, # Calib3d
 
+    "Video":
+    {
+        'private' :
+        (
+            ('CV_LKFLOW_INITIAL_GUESSES',    4 ),
+            ('CV_LKFLOW_GET_MIN_EIGENVALS',  8 ),
+        ) # private
+    }, # Video
+
 }
 
 
@@ -191,34 +204,38 @@ type_dict = {
 
 # "complex" : { j_type : "?", jn_args : (("", ""),), jn_name : "", jni_var : "", jni_name : "", "suffix" : "?" },
 
-    "vector_Point"    : { "j_type" : "List<Point>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point> %(n)s", "suffix" : "J" },
-    "vector_Point2f"  : { "j_type" : "List<Point>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point2f> %(n)s", "suffix" : "J" },
-    "vector_Point2d"  : { "j_type" : "List<Point>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point2d> %(n)s", "suffix" : "J" },
-    "vector_Point3i"  : { "j_type" : "List<Point3>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point3i> %(n)s", "suffix" : "J" },
-    "vector_Point3f"  : { "j_type" : "List<Point3>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point3f> %(n)s", "suffix" : "J" },
-    "vector_Point3d"  : { "j_type" : "List<Point3>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point3d> %(n)s", "suffix" : "J" },
-    "vector_Mat"      : { "j_type" : "List<Mat>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Mat> %(n)s", "suffix" : "J" },
-    "vector_KeyPoint" : { "j_type" : "List<KeyPoint>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<KeyPoint> %(n)s", "suffix" : "J" },
-    "vector_DMatch"   : { "j_type" : "List<DMatch>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<DMatch> %(n)s", "suffix" : "J" },
-    "vector_Rect"     : { "j_type" : "List<Rect>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Rect> %(n)s", "suffix" : "J" },
-    "vector_uchar"    : { "j_type" : "List<Byte>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<uchar> %(n)s", "suffix" : "J" },
-    "vector_char"     : { "j_type" : "List<Byte>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<char> %(n)s", "suffix" : "J" },
-    "vector_int"      : { "j_type" : "List<Integer>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<int> %(n)s", "suffix" : "J" },
-    "vector_float"    : { "j_type" : "List<Float>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<float> %(n)s", "suffix" : "J" },
-    "vector_double"   : { "j_type" : "List<Double>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<double> %(n)s", "suffix" : "J" },
-    "vector_Vec4f"    : { "j_type" : "Mat", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Vec4f> %(n)s", "suffix" : "J" },
-    "vector_Vec6f"    : { "j_type" : "Mat", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Vec6f> %(n)s", "suffix" : "J" },
+    "vector_Point"    : { "j_type" : "MatOfPoint", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point> %(n)s", "suffix" : "J" },
+    "vector_Point2f"  : { "j_type" : "MatOfPoint2f", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point2f> %(n)s", "suffix" : "J" },
+    #"vector_Point2d"  : { "j_type" : "MatOfPoint2d", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point2d> %(n)s", "suffix" : "J" },
+    "vector_Point3i"  : { "j_type" : "MatOfPoint3", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point3i> %(n)s", "suffix" : "J" },
+    "vector_Point3f"  : { "j_type" : "MatOfPoint3f", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point3f> %(n)s", "suffix" : "J" },
+    #"vector_Point3d"  : { "j_type" : "MatOfPoint3d", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Point3d> %(n)s", "suffix" : "J" },
+    "vector_KeyPoint" : { "j_type" : "MatOfKeyPoint", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<KeyPoint> %(n)s", "suffix" : "J" },
+    "vector_DMatch"   : { "j_type" : "MatOfDMatch", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<DMatch> %(n)s", "suffix" : "J" },
+    "vector_Rect"     : { "j_type" : "MatOfRect",   "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Rect> %(n)s", "suffix" : "J" },
+    "vector_uchar"    : { "j_type" : "MatOfByte",   "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<uchar> %(n)s", "suffix" : "J" },
+    "vector_char"     : { "j_type" : "MatOfByte",   "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<char> %(n)s", "suffix" : "J" },
+    "vector_int"      : { "j_type" : "MatOfInt",    "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<int> %(n)s", "suffix" : "J" },
+    "vector_float"    : { "j_type" : "MatOfFloat",  "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<float> %(n)s", "suffix" : "J" },
+    "vector_double"   : { "j_type" : "MatOfDouble", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<double> %(n)s", "suffix" : "J" },
+    "vector_Vec4i"    : { "j_type" : "MatOfInt4",    "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Vec4i> %(n)s", "suffix" : "J" },
+    "vector_Vec4f"    : { "j_type" : "MatOfFloat4",  "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Vec4f> %(n)s", "suffix" : "J" },
+    "vector_Vec6f"    : { "j_type" : "MatOfFloat6",  "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Vec6f> %(n)s", "suffix" : "J" },
 
-    "vector_vector_KeyPoint": { "j_type" : "List<List<KeyPoint>>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<KeyPoint> > %(n)s" },
-    "vector_vector_DMatch"  : { "j_type" : "List<List<DMatch>>",   "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<DMatch> > %(n)s" },
-    "vector_vector_char"    : { "j_type" : "List<List<Byte>>",     "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<char> > %(n)s" },
-    "vector_vector_Point"   : { "j_type" : "List<List<Point>>",    "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<Point> > %(n)s" },
-    "vector_vector_Point2f" : { "j_type" : "List<List<Point>>",    "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<Point2f> > %(n)s" },
+    "vector_Mat"      : { "j_type" : "List<Mat>",   "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector<Mat> %(n)s", "suffix" : "J" },
+
+    "vector_vector_KeyPoint": { "j_type" : "List<MatOfKeyPoint>", "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<KeyPoint> > %(n)s" },
+    "vector_vector_DMatch"  : { "j_type" : "List<MatOfDMatch>",   "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<DMatch> > %(n)s" },
+    "vector_vector_char"    : { "j_type" : "List<MatOfByte>",     "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<char> > %(n)s" },
+    "vector_vector_Point"   : { "j_type" : "List<MatOfPoint>",    "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<Point> > %(n)s" },
+    "vector_vector_Point2f" : { "j_type" : "List<MatOfPoint2f>",    "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<Point2f> > %(n)s" },
+    "vector_vector_Point3f" : { "j_type" : "List<MatOfPoint3f>",    "jn_type" : "long", "jni_type" : "jlong", "jni_var" : "vector< vector<Point3f> > %(n)s" },
 
     "Mat"     : { "j_type" : "Mat", "jn_type" : "long", "jn_args" : (("__int64", ".nativeObj"),),
                   "jni_var" : "Mat& %(n)s = *((Mat*)%(n)s_nativeObj)",
                   "jni_type" : "jlong", #"jni_name" : "*%(n)s",
                   "suffix" : "J" },
+
     "Point"   : { "j_type" : "Point", "jn_args" : (("double", ".x"), ("double", ".y")),
                   "jni_var" : "Point %(n)s((int)%(n)s_x, (int)%(n)s_y)", "jni_type" : "jdoubleArray",
                   "suffix" : "DD"},
@@ -281,8 +298,15 @@ type_dict = {
                   "jni_var" : 'const char* utf_%(n)s = env->GetStringUTFChars(%(n)s, 0); std::string n_%(n)s( utf_%(n)s ? utf_%(n)s : "" ); env->ReleaseStringUTFChars(%(n)s, utf_%(n)s)',
                   "suffix" : "Ljava_lang_String_2"},
 "TermCriteria": { "j_type" : "TermCriteria",  "jn_args" : (("int", ".type"), ("int", ".maxCount"), ("double", ".epsilon")),
-                  "jni_var" : "TermCriteria %(n)s(%(n)s_type, %(n)s_maxCount, %(n)s_epsilon)",
+                  "jni_var" : "TermCriteria %(n)s(%(n)s_type, %(n)s_maxCount, %(n)s_epsilon)", "jni_type" : "jdoubleArray",
                   "suffix" : "IID"},
+"CvTermCriteria": { "j_type" : "TermCriteria",  "jn_args" : (("int", ".type"), ("int", ".maxCount"), ("double", ".epsilon")),
+                  "jni_var" : "TermCriteria %(n)s(%(n)s_type, %(n)s_maxCount, %(n)s_epsilon)", "jni_type" : "jdoubleArray",
+                  "suffix" : "IID"},
+    "Vec2d"   : { "j_type" : "double[]",  "jn_args" : (("double", ".val[0]"), ("double", ".val[1]")),
+                  "jn_type" : "double[]",
+                  "jni_var" : "Vec2d %(n)s(%(n)s_val0, %(n)s_val1)", "jni_type" : "jdoubleArray",
+                  "suffix" : "DD"},
     "Vec3d"   : { "j_type" : "double[]",  "jn_args" : (("double", ".val[0]"), ("double", ".val[1]"), ("double", ".val[2]")),
                   "jn_type" : "double[]",
                   "jni_var" : "Vec3d %(n)s(%(n)s_val0, %(n)s_val1, %(n)s_val2)", "jni_type" : "jdoubleArray",
@@ -461,6 +485,8 @@ JNIEXPORT jdoubleArray JNICALL Java_org_opencv_core_Core_n_1getTextSize
 
 """,
         }, # getTextSize
+##        "checkRange"           : #TBD
+##            {'j_code' : '/* TBD: checkRange() */', 'jn_code' : '', 'cpp_code' : '' },
 
         "checkHardwareSupport" : {'j_code' : '', 'jn_code' : '', 'cpp_code' : '' },
         "setUseOptimized"      : {'j_code' : '', 'jn_code' : '', 'cpp_code' : '' },
@@ -480,196 +506,10 @@ JNIEXPORT jdoubleArray JNICALL Java_org_opencv_core_Core_n_1getTextSize
         "setTrackbarPos"    : {'j_code' : '', 'jn_code' : '', 'cpp_code' : '' },
         "imshow"            : {'j_code' : '', 'jn_code' : '', 'cpp_code' : '' },
         "waitKey"           : {'j_code' : '', 'jn_code' : '', 'cpp_code' : '' },
+        "moveWindow"        : {'j_code' : '', 'jn_code' : '', 'cpp_code' : '' },
+        "resizeWindow"      : {'j_code' : '', 'jn_code' : '', 'cpp_code' : '' },
     }, # Highgui
-    
-    'CvANN_MLP_TrainParams':
-    {
-        "CvANN_MLP_TrainParams" : 
-        {
-            'j_code' : """
-//javadoc:CvANN_MLP_TrainParams::CvANN_MLP_TrainParams()
-public CvANN_MLP_TrainParams() {
-    nativeObj = n_newObj();
-}
-            """,
-            'jn_code' : 'private static native long n_newObj();',
-            'cpp_code' : """
-JNIEXPORT jlong JNICALL Java_org_opencv_ml_CvANN_1MLP_1TrainParams_n_1newObj
-  (JNIEnv* env, jclass cls)
-{
-    return (jlong) new CvANN_MLP_TrainParams();
-}
-            """
-        },
-    },
-    
-    'CvBoostParams':
-    {
-        "CvBoostParams" : 
-        {
-            'j_code' : """
-//javadoc:CvBoostParams::CvBoostParams()
-public CvBoostParams() {
-    nativeObj = n_newObj();
-}
-            """,
-            'jn_code' : 'private static native long n_newObj();',
-            'cpp_code' : """
-JNIEXPORT jlong JNICALL Java_org_opencv_ml_CvBoostParams_n_1newObj
-  (JNIEnv* env, jclass cls)
-{
-    return (jlong) new CvBoostParams();
-}
-            """
-        },
-    },
-    
-    'CvDTreeParams':
-    {
-        "CvDTreeParams" : 
-        {
-            'j_code' : """
-//javadoc:CvDTreeParams::CvDTreeParams()
-public CvDTreeParams() {
-    nativeObj = n_newObj();
-}
-            """,
-            'jn_code' : 'private static native long n_newObj();',
-            'cpp_code' : """
-JNIEXPORT jlong JNICALL Java_org_opencv_ml_CvDTreeParams_n_1newObj
-  (JNIEnv* env, jclass cls)
-{
-    return (jlong) new CvDTreeParams();
-}
-            """
-        },
-    },
-    
-    'CvEMParams':
-    {
-        "CvEMParams" : 
-        {
-            'j_code' : """
-//javadoc:CvEMParams::CvEMParams()
-public CvEMParams() {
-    nativeObj = n_newObj();
-}
-            """,
-            'jn_code' : 'private static native long n_newObj();',
-            'cpp_code' : """
-JNIEXPORT jlong JNICALL Java_org_opencv_ml_CvEMParams_n_1newObj
-  (JNIEnv* env, jclass cls)
-{
-    return (jlong) new CvEMParams();
-}
-            """
-        },
-    },
-    
-    'CvGBTreesParams':
-    {
-        "CvGBTreesParams" : 
-        {
-            'j_code' : """
-//javadoc:CvGBTreesParams::CvGBTreesParams()
-public CvGBTreesParams() {
-    nativeObj = n_newObj();
-}
-            """,
-            'jn_code' : 'private static native long n_newObj();',
-            'cpp_code' : """
-JNIEXPORT jlong JNICALL Java_org_opencv_ml_CvGBTreesParams_n_1newObj
-  (JNIEnv* env, jclass cls)
-{
-    return (jlong) new CvGBTreesParams();
-}
-            """
-        },
-    },
-    
-    'CvParamGrid':
-    {
-        "CvParamGrid" : 
-        {
-            'j_code' : """
-//javadoc:CvParamGrid::CvParamGrid()
-public CvParamGrid() {
-    nativeObj = n_newObj();
-}
-            """,
-            'jn_code' : 'private static native long n_newObj();',
-            'cpp_code' : """
-JNIEXPORT jlong JNICALL Java_org_opencv_ml_CvParamGrid_n_1newObj
-  (JNIEnv* env, jclass cls)
-{
-    return (jlong) new CvParamGrid();
-}
-            """
-        },
-    },
-    
-    'CvRTParams':
-    {
-        "CvRTParams" : 
-        {
-            'j_code' : """
-//javadoc:CvRTParams::CvRTParams()
-public CvRTParams() {
-    nativeObj = n_newObj();
-}
-            """,
-            'jn_code' : 'private static native long n_newObj();',
-            'cpp_code' : """
-JNIEXPORT jlong JNICALL Java_org_opencv_ml_CvRTParams_n_1newObj
-  (JNIEnv* env, jclass cls)
-{
-    return (jlong) new CvRTParams();
-}
-            """
-        },
-    },
-    
-    'CvStatModel':
-    {
-        "CvStatModel" : 
-        {
-            'j_code' : """
-//javadoc:CvStatModel::CvStatModel()
-public CvStatModel() {
-    nativeObj = n_newObj();
-}
-            """,
-            'jn_code' : 'private static native long n_newObj();',
-            'cpp_code' : """
-JNIEXPORT jlong JNICALL Java_org_opencv_ml_CvStatModel_n_1newObj
-  (JNIEnv* env, jclass cls)
-{
-    return (jlong) new CvStatModel();
-}
-            """
-        },
-    },
-    
-    'CvSVMParams':
-    {
-        "CvSVMParams" : 
-        {
-            'j_code' : """
-//javadoc:CvSVMParams::CvSVMParams()
-public CvSVMParams() {
-    nativeObj = n_newObj();
-}
-            """,
-            'jn_code' : 'private static native long n_newObj();',
-            'cpp_code' : """
-JNIEXPORT jlong JNICALL Java_org_opencv_ml_CvSVMParams_n_1newObj
-  (JNIEnv* env, jclass cls)
-{
-    return (jlong) new CvSVMParams();
-}
-            """
-        },
-    },
+
 }
 
 # { class : { func : {arg_name : ctype} } }
@@ -679,12 +519,14 @@ func_arg_fix = {
         'randn'    : { 'mean'    : 'double', 'stddev' : 'double', },
         'inRange'  : { 'lowerb'  : 'Scalar', 'upperb' : 'Scalar', },
         'goodFeaturesToTrack' : { 'corners' : 'vector_Point', },
-        'findFundamentalMat' : { 'points1' : 'vector_Point2d', 'points2' : 'vector_Point2d', },
+        'findFundamentalMat' : { 'points1' : 'vector_Point2f', 'points2' : 'vector_Point2f', },
         'cornerSubPix' : { 'corners' : 'vector_Point2f', },
         'minEnclosingCircle' : { 'points' : 'vector_Point2f', },
         'findHomography' : { 'srcPoints' : 'vector_Point2f', 'dstPoints' : 'vector_Point2f', },
-        'solvePnP' : { 'objectPoints' : 'vector_Point3f', 'imagePoints' : 'vector_Point2f', },
-        'solvePnPRansac' : { 'objectPoints' : 'vector_Point3f', 'imagePoints' : 'vector_Point2f', },
+        'solvePnP' : { 'objectPoints' : 'vector_Point3f', 'imagePoints' : 'vector_Point2f',
+                       'distCoeffs' : 'vector_double' },
+        'solvePnPRansac' : { 'objectPoints' : 'vector_Point3f', 'imagePoints' : 'vector_Point2f',
+                             'distCoeffs' : 'vector_double' },
         'calcOpticalFlowPyrLK' : { 'prevPts' : 'vector_Point2f', 'nextPts' : 'vector_Point2f',
                                    'status' : 'vector_uchar', 'err' : 'vector_float', },
         'fitEllipse' : { 'points' : 'vector_Point2f', },
@@ -692,15 +534,26 @@ func_arg_fix = {
         'polylines' : { 'pts' : 'vector_vector_Point', },
         'fillConvexPoly' : { 'points' : 'vector_Point', },
         'boundingRect' : { 'points' : 'vector_Point', },
-        #'approxPolyDP' : { 'curve' : 'vector_Point2f', 'CV_OUT approxCurve' : 'vector_Point2f', },
+        'approxPolyDP' : { 'curve' : 'vector_Point2f', 'approxCurve' : 'vector_Point2f', },
         'arcLength' : { 'curve' : 'vector_Point2f', },
-        'isContourConvex' : { 'contour' : 'vector_Point2f', },
         'pointPolygonTest' : { 'contour' : 'vector_Point2f', },
         'minAreaRect' : { 'points' : 'vector_Point2f', },
         'getAffineTransform' : { 'src' : 'vector_Point2f', 'dst' : 'vector_Point2f', },
         'hconcat' : { 'src' : 'vector_Mat', },
         'vconcat' : { 'src' : 'vector_Mat', },
-        
+        'undistortPoints' : { 'src' : 'vector_Point2f', 'dst' : 'vector_Point2f' },
+        'checkRange' : {'pos' : '*'},
+        'meanStdDev' : {'mean' : 'vector_double', 'stddev' : 'vector_double'},
+        'drawContours' : {'contours' : 'vector_vector_Point'},
+        'findContours' : {'contours' : 'vector_vector_Point'},
+        'convexityDefects' : {'contour' : 'vector_Point', 'convexhull' : 'vector_int', 'convexityDefects' : 'vector_Vec4i'},
+        'isContourConvex' : { 'contour' : 'vector_Point', },
+        'convexHull' : {'points' : 'vector_Point', 'hull' : 'vector_int', 'returnPoints' : ''},
+        'projectPoints' : { 'objectPoints' : 'vector_Point3f', 'imagePoints' : 'vector_Point2f',
+                            'distCoeffs' : 'vector_double' },
+        'initCameraMatrix2D' : {'objectPoints' : 'vector_vector_Point3f', 'imagePoints' : 'vector_vector_Point2f', },
+        'findChessboardCorners' : { 'corners' : 'vector_Point2f' },
+        'drawChessboardCorners' : { 'corners' : 'vector_Point2f' },
     }, # '', i.e. no class
 } # func_arg_fix
 
@@ -719,11 +572,11 @@ class ClassPropInfo(object):
         self.rw = "/RW" in decl[3]
 
 class ClassInfo(object):
-    def __init__(self, decl): # [ 'class/struct cname', [bases], [modlist] ]
+    def __init__(self, decl): # [ 'class/struct cname', ': base', [modlist] ]
         name = decl[0]
         name = name[name.find(" ")+1:].strip()
         self.cname = self.name = self.jname = re.sub(r"^cv\.", "", name)
-        self.cname =self.cname.replace(".", "::")
+        self.cname = self.cname.replace(".", "::")
         self.methods = {}
         self.methods_suffixes = {}
         self.consts = [] # using a list to save the occurence order
@@ -734,7 +587,10 @@ class ClassInfo(object):
         for m in decl[2]:
             if m.startswith("="):
                 self.jname = m[1:]
-
+        self.base = ''
+        if decl[1]:
+            #self.base = re.sub(r"\b"+self.jname+r"\b", "", decl[1].replace(":", "")).strip()
+            self.base = re.sub(r"^.*:", "", decl[1].split(",")[0]).strip().replace(self.jname, "")
 
 class ArgInfo(object):
     def __init__(self, arg_tuple): # [ ctype, name, def val, [mod], argno ]
@@ -743,6 +599,10 @@ class ArgInfo(object):
         if ctype.endswith("*"):
             ctype = ctype[:-1]
             self.pointer = True
+        if ctype == 'vector_Point2d':
+            ctype = 'vector_Point2f'
+        elif ctype == 'vector_Point3d':
+            ctype = 'vector_Point3f'
         self.ctype = ctype
         self.name = arg_tuple[1]
         self.defval = arg_tuple[2]
@@ -770,7 +630,7 @@ class FuncInfo(object):
             if m.startswith("="):
                 self.jname = m[1:]
         self.static = ["","static"][ "/S" in decl[2] ]
-        self.ctype = decl[1] or ""
+        self.ctype = re.sub(r"^CvTermCriteria", "TermCriteria", decl[1] or "")
         self.args = []
         arg_fix_map = func_arg_fix.get(classname, {}).get(self.jname, {})
         for a in decl[3]:
@@ -799,19 +659,39 @@ class JavaWrapperGenerator(object):
         self.clear()
 
     def clear(self):
-        self.classes = { "Mat" : ClassInfo([ 'class Mat', [], [] ]) }
+        self.classes = { "Mat" : ClassInfo([ 'class Mat', '', [], [] ]) }
         self.module = ""
         self.Module = ""
         self.java_code= {} # { class : {j_code, jn_code} }
         self.cpp_code = None
         self.ported_func_list = []
         self.skipped_func_list = []
+        self.def_args_hist = {} # { def_args_cnt : funcs_cnt }
+        self.classes_map = []
+        self.classes_simple = []
 
-    def add_class_code_stream(self, class_name):
+    def add_class_code_stream(self, class_name, cls_base = ''):
         jname = self.classes[class_name].jname
         self.java_code[class_name] = { "j_code" : StringIO(), "jn_code" : StringIO(), }
         if class_name != self.Module:
-            self.java_code[class_name]["j_code"].write("""
+            if cls_base:
+                self.java_code[class_name]["j_code"].write("""
+//
+// This file is auto-generated. Please don't modify it!
+//
+package org.opencv.%(m)s;
+
+$imports
+
+// C++: class %(c)s
+//javadoc: %(c)s
+public class %(jc)s extends %(base)s {
+
+    protected %(jc)s(long addr) { super(addr); }
+
+""" % { 'm' : self.module, 'c' : class_name, 'jc' : jname, 'base' :  cls_base })
+            else: # not cls_base
+                self.java_code[class_name]["j_code"].write("""
 //
 // This file is auto-generated. Please don't modify it!
 //
@@ -826,8 +706,7 @@ public class %(jc)s {
     protected final long nativeObj;
     protected %(jc)s(long addr) { nativeObj = addr; }
 
-""" % { 'm' : self.module, 'c' : class_name, 'jc' : jname } )
-
+""" % { 'm' : self.module, 'c' : class_name, 'jc' : jname })
         else: # class_name == self.Module
             self.java_code[class_name]["j_code"].write("""
 //
@@ -862,6 +741,13 @@ public class %(jc)s {
         if name in type_dict:
             print "Duplicated class: " + name
             return
+        if '/Simple' in decl[2]:
+            self.classes_simple.append(name)
+        if ('/Map' in decl[2]):
+            self.classes_map.append(name)
+            #adding default c-tor
+            ffi = FuncFamilyInfo(['cv.'+name+'.'+name, '', [], []])
+            classinfo.methods[ffi.jname] = ffi
         type_dict[name] = \
             { "j_type" : classinfo.jname,
               "jn_type" : "long", "jn_args" : (("__int64", ".nativeObj"),),
@@ -889,7 +775,9 @@ public class %(jc)s {
             else:
                 print "Skipped property: [%s]" % name, p
 
-        self.add_class_code_stream(name)
+        self.add_class_code_stream(name, classinfo.base)
+        if classinfo.base:
+            self.get_imports(name, classinfo.base)
 
 
     def add_const(self, decl): # [ "const cname", val, [], [] ]
@@ -946,6 +834,9 @@ public class %(jc)s {
             func_map[ffi.jname].add_func(ffi.funcs[0])
         else:
             func_map[ffi.jname] = ffi
+        # calc args with def val
+        cnt = len([a for a in ffi.funcs[0].args if a.defval])
+        self.def_args_hist[cnt] = self.def_args_hist.get(cnt, 0) + 1
 
     def save(self, path, buf):
         f = open(path, "wt")
@@ -958,7 +849,7 @@ public class %(jc)s {
         self.Module = module.capitalize()
         parser = hdr_parser.CppHeaderParser()
 
-        self.add_class( ['class ' + self.Module, [], [], []] ) # [ 'class/struct cname', [bases], [modlist] [props] ]
+        self.add_class( ['class ' + self.Module, '', [], []] ) # [ 'class/struct cname', ':bases', [modlist] [props] ]
 
         # scan the headers and build more descriptive maps of classes, consts, functions
         for hdr in srcfiles:
@@ -971,16 +862,6 @@ public class %(jc)s {
                     self.add_const(decl)
                 else: # function
                     self.add_func(decl)
-                    
-        #FIXME: BackgroundSubtractor is merged into BackgroundSubtractorMOG because of inheritance
-        if "BackgroundSubtractor" in self.classes:
-            bs = self.classes["BackgroundSubtractor"]
-            bsmog = self.classes["BackgroundSubtractorMOG"]
-            for name, mtd in bs.methods.items():
-                for fn in mtd.funcs:
-                    fn.classname = "BackgroundSubtractorMOG"
-                bsmog.methods[name] = mtd;
-            del self.classes["BackgroundSubtractor"]
 
         self.cpp_code = StringIO()
         self.cpp_code.write("""
@@ -1034,6 +915,13 @@ extern "C" {
             (len(self.skipped_func_list), len(self.ported_func_list)+ len(self.skipped_func_list))
         )
         report.write("".join(self.skipped_func_list))
+
+        for i in self.def_args_hist.keys():
+            report.write("\n%i def args - %i funcs" % (i, self.def_args_hist[i]))
+
+        report.write("\n\nclass as MAP:\n\t" + "\n\t".join(self.classes_map))
+        report.write("\n\nclass SIMPLE:\n\t" + "\n\t".join(self.classes_simple))
+
         self.save(output_path+"/"+module+".txt", report.getvalue())
 
         print "Done %i of %i funcs." % (len(self.ported_func_list), len(self.ported_func_list)+ len(self.skipped_func_list))
@@ -1042,18 +930,32 @@ extern "C" {
 
     def get_imports(self, scope_classname, ctype):
         imports = self.classes[scope_classname or self.Module].imports
-        if ctype.startswith('vector'):
-            imports.add("java.util.List")
+        if ctype.startswith('vector_vector'):
             imports.add("org.opencv.core.Mat")
+            imports.add("java.util.List")
             imports.add("org.opencv.utils.Converters")
-            ctype = ctype.replace('vector_', '')
+            self.get_imports(scope_classname, ctype.replace('vector_vector', 'vector'))
+            return
+        if ctype.startswith('vector'):
+            imports.add("org.opencv.core.Mat")
+            if type_dict[ctype]['j_type'].startswith('MatOf'):
+                imports.add("org.opencv.core." + type_dict[ctype]['j_type'])
+                return
+            else:
+                imports.add("java.util.List")
+                imports.add("org.opencv.utils.Converters")
+                self.get_imports(scope_classname, ctype.replace('vector_', ''))
+                return
         j_type = ''
         if ctype in type_dict:
             j_type = type_dict[ctype]['j_type']
-        if j_type in ( "CvType", "Mat", "Point", "Point3", "Range", "Rect", "RotatedRect", "Scalar", "Size", "TermCriteria" ):
+        elif ctype in ("Algorithm"):
+            j_type = ctype
+        if j_type in ( "CvType", "Mat", "Point", "Point3", "Range", "Rect", "RotatedRect", "Scalar", "Size", "TermCriteria", "Algorithm" ):
             imports.add("org.opencv.core." + j_type)
         if j_type == 'String':
             imports.add("java.lang.String")
+        return
 
 
 
@@ -1069,7 +971,7 @@ extern "C" {
         else:
             decl_args = []
             for a in fi.args:
-                s = a.ctype
+                s = a.ctype or ' _hidden_ '
                 if a.pointer:
                     s += "*"
                 elif a.out:
@@ -1130,6 +1032,8 @@ extern "C" {
                 jni_args.append( ArgInfo([ "__int64", "self", "", [], "" ]) )
             self.get_imports(fi.classname, fi.ctype)
             for a in args:
+                if not a.ctype: # hidden
+                    continue
                 self.get_imports(fi.classname, a.ctype)
                 if "vector" in a.ctype: # pass as Mat
                     jn_args.append  ( ArgInfo([ "__int64", "%s_mat.nativeObj" % a.name, "", [], "" ]) )
@@ -1142,12 +1046,18 @@ extern "C" {
                             j_prologue.append( "List<Mat> %(n)s_tmplm = new ArrayList<Mat>((%(n)s != null) ? %(n)s.size() : 0);" % {"n" : a.name } )
                             j_prologue.append( "Mat %(n)s_mat = Converters.%(t)s_to_Mat(%(n)s, %(n)s_tmplm);" % {"n" : a.name, "t" : a.ctype} )
                         else:
-                            j_prologue.append( "Mat %(n)s_mat = Converters.%(t)s_to_Mat(%(n)s);" % {"n" : a.name, "t" : a.ctype} )
+                            if not type_dict[a.ctype]["j_type"].startswith("MatOf"):
+                                j_prologue.append( "Mat %(n)s_mat = Converters.%(t)s_to_Mat(%(n)s);" % {"n" : a.name, "t" : a.ctype} )
+                            else:
+                                j_prologue.append( "Mat %s_mat = %s;" % (a.name, a.name) )
                         c_prologue.append( "Mat_to_%(t)s( %(n)s_mat, %(n)s );" % {"n" : a.name, "t" : a.ctype} )
                     else:
-                        j_prologue.append( "Mat %s_mat = new Mat();" % a.name )
+                        if not type_dict[a.ctype]["j_type"].startswith("MatOf"):
+                            j_prologue.append( "Mat %s_mat = new Mat();" % a.name )
+                        else:
+                            j_prologue.append( "Mat %s_mat = %s;" % (a.name, a.name) )
                     if "O" in a.out:
-                        if type_dict[a.ctype]["j_type"] != "Mat":
+                        if not type_dict[a.ctype]["j_type"].startswith("MatOf"):
                             j_epilogue.append("Converters.Mat_to_%(t)s(%(n)s_mat, %(n)s);" % {"t" : a.ctype, "n" : a.name})
                         c_epilogue.append( "%(t)s_to_Mat( %(n)s, %(n)s_mat );" % {"n" : a.name, "t" : a.ctype} )
                 else:
@@ -1193,7 +1103,7 @@ extern "C" {
             f_name = fi.name
             if fi.classname:
                 f_name = fi.classname + "::" + fi.name
-            java_doc = "//javadoc: " + f_name + "(%s)" % ", ".join([a.name for a in args])
+            java_doc = "//javadoc: " + f_name + "(%s)" % ", ".join([a.name for a in args if a.ctype])
             j_code.write(" "*4 + java_doc + "\n")
 
             # public java wrapper method impl (calling native one above)
@@ -1207,17 +1117,24 @@ extern "C" {
             tail = ""
             ret = "return retVal;"
             if ret_type.startswith('vector'):
-                ret_val = "Mat retValMat = new Mat("
                 tail = ")"
                 j_type = type_dict[ret_type]["j_type"]
-                j_prologue.append( j_type + ' retVal = new Array' + j_type+'();')
-                self.classes[fi.classname or self.Module].imports.add('java.util.ArrayList')
-                j_epilogue.append('Converters.Mat_to_' + ret_type + '(retValMat, retVal);')
+                if j_type.startswith('MatOf'):
+                    ret_val += j_type + ".fromNativeAddr("
+                else:
+                    ret_val = "Mat retValMat = new Mat("
+                    j_prologue.append( j_type + ' retVal = new Array' + j_type+'();')
+                    self.classes[fi.classname or self.Module].imports.add('java.util.ArrayList')
+                    j_epilogue.append('Converters.Mat_to_' + ret_type + '(retValMat, retVal);')
             elif ret_type == "void":
                 ret_val = ""
                 ret = "return;"
             elif ret_type == "": # c-tor
-                ret_val = "nativeObj = "
+                if fi.classname and self.classes[fi.classname].base:
+                    ret_val = "super( "
+                    tail = " )"
+                else:
+                    ret_val = "nativeObj = "
                 ret = "return;"
             elif ret_type in self.classes: # wrapped class
                 ret_val = type_dict[ret_type]["j_type"] + " retVal = new " + self.classes[ret_type].jname + "("
@@ -1232,6 +1149,8 @@ extern "C" {
 
             j_args = []
             for a in args:
+                if not a.ctype: #hidden
+                    continue
                 jt = type_dict[a.ctype]["j_type"]
                 if a.out and a.ctype in ('bool', 'int', 'long', 'float', 'double'):
                     jt += '[]'
@@ -1318,11 +1237,13 @@ extern "C" {
                     jni_name = "&%(n)s"
                 else:
                     jni_name = "%(n)s"
+                if not a.ctype: # hidden
+                    jni_name = a.defval
                 cvargs.append( type_dict[a.ctype].get("jni_name", jni_name) % {"n" : a.name})
                 if "vector" not in a.ctype :
                     if ("I" in a.out or not a.out or a.ctype in self.classes) and "jni_var" in type_dict[a.ctype]: # complex type
                         c_prologue.append(type_dict[a.ctype]["jni_var"] % {"n" : a.name} + ";")
-                    if a.out and "I" not in a.out and a.ctype not in self.classes:
+                    if a.out and "I" not in a.out and a.ctype not in self.classes and a.ctype:
                         c_prologue.append("%s %s;" % (a.ctype, a.name))
 
             rtype = type_dict[fi.ctype].get("jni_type", "jdoubleArray")
@@ -1366,16 +1287,19 @@ JNIEXPORT $rtype JNICALL Java_org_opencv_${module}_${clazz}_$fname
         epilogue = "  ".join(c_epilogue), \
         ret = ret, \
         cvname = cvname, \
-        cvargs = ", ".join([a for a in cvargs]), \
+        cvargs = ", ".join(cvargs), \
         default = default, \
         retval = retval, \
     ) )
 
             # processing args with default values
-            if args and args[-1].defval:
-                a = args.pop()
-            else:
+            if not args or not args[-1].defval:
                 break
+            while args and args[-1].defval:
+                # 'smart' overloads filtering
+                a = args.pop()
+                if a.name in ('mask', 'dtype', 'ddepth', 'lineType', 'borderType', 'borderMode', 'criteria'):
+                    break
 
 
 
@@ -1434,7 +1358,6 @@ JNIEXPORT $rtype JNICALL Java_org_opencv_${module}_${clazz}_$fname
     @Override
     protected void finalize() throws Throwable {
         delete(nativeObj);
-        super.finalize();
     }
 """ )
 

@@ -72,9 +72,11 @@
 
   #if (_MSC_VER >= 1400 && defined _M_X64) || (__GNUC__ >= 4 && defined __x86_64__)
     #if defined WIN32
-    #include <intrin.h>
-  #endif
-    #include <emmintrin.h>
+      #include <intrin.h>
+    #endif
+    #if __SSE2__ || !defined __GNUC__
+      #include <emmintrin.h>
+    #endif
   #endif
 
   #if defined __BORLANDC__
@@ -250,14 +252,18 @@ enum {
  CV_StsBadMemBlock=            -214, /* an allocated block has been corrupted */
  CV_StsAssert=                 -215, /* assertion failed */    
  CV_GpuNotSupported=           -216,  
- CV_GpuApiCallError=           -217, 
- CV_GpuNppCallError=           -218,
- CV_GpuCufftCallError=         -219
+ CV_GpuApiCallError=           -217,
+ CV_OpenGlNotSupported=        -218,
+ CV_OpenGlApiCallError=        -219
 };
 
 /****************************************************************************************\
 *                             Common macros and inline functions                         *
 \****************************************************************************************/
+
+#ifdef HAVE_TEGRA_OPTIMIZATION
+# include "tegra_round.hpp"
+#endif
 
 #define CV_PI   3.1415926535897932384626433832795
 #define CV_LOG2 0.69314718055994530941723212145818
@@ -288,7 +294,7 @@ enum {
 
 CV_INLINE  int  cvRound( double value )
 {
-#if (defined _MSC_VER && defined _M_X64) || (defined __GNUC__ && defined __x86_64__ && !defined __APPLE__)
+#if (defined _MSC_VER && defined _M_X64) || (defined __GNUC__ && defined __x86_64__ && __SSE2__ && !defined __APPLE__)
     __m128d t = _mm_set_sd( value );
     return _mm_cvtsd_si32(t);
 #elif defined _MSC_VER && defined _M_IX86
@@ -300,23 +306,30 @@ CV_INLINE  int  cvRound( double value )
     }
     return t;
 #elif defined HAVE_LRINT || defined CV_ICC || defined __GNUC__
+# ifdef HAVE_TEGRA_OPTIMIZATION
+    TEGRA_ROUND(value);
+# else
     return (int)lrint(value);
+# endif
 #else
     // while this is not IEEE754-compliant rounding, it's usually a good enough approximation
     return (int)(value + (value >= 0 ? 0.5 : -0.5));
 #endif
 }
 
+#if defined __SSE2__ || (defined _M_IX86_FP && 2 == _M_IX86_FP)
+#include "emmintrin.h"
+#endif
 
 CV_INLINE  int  cvFloor( double value )
 {
-#ifdef __GNUC__
-    int i = (int)value;
-    return i - (i > value);
-#elif defined _MSC_VER && defined _M_X64
+#if defined _MSC_VER && defined _M_X64 || (defined __GNUC__ && defined __SSE2__ && !defined __APPLE__)
     __m128d t = _mm_set_sd( value );
     int i = _mm_cvtsd_si32(t);
     return i - _mm_movemask_pd(_mm_cmplt_sd(t, _mm_cvtsi32_sd(t,i)));
+#elif defined __GNUC__
+    int i = (int)value;
+    return i - (i > value);
 #else
     int i = cvRound(value);
     Cv32suf diff;
@@ -328,13 +341,13 @@ CV_INLINE  int  cvFloor( double value )
 
 CV_INLINE  int  cvCeil( double value )
 {
-#ifdef __GNUC__
-    int i = (int)value;
-    return i + (i < value);
-#elif defined _MSC_VER && defined _M_X64
+#if defined _MSC_VER && defined _M_X64 || (defined __GNUC__ && defined __SSE2__&& !defined __APPLE__)
     __m128d t = _mm_set_sd( value );
     int i = _mm_cvtsd_si32(t);
     return i + _mm_movemask_pd(_mm_cmplt_sd(_mm_cvtsi32_sd(t,i), t));
+#elif defined __GNUC__
+    int i = (int)value;
+    return i + (i < value);
 #else
     int i = cvRound(value);
     Cv32suf diff;
@@ -1117,7 +1130,7 @@ CV_INLINE  CvPoint3D64f  cvPoint3D64f( double x, double y, double z )
 
 /******************************** CvSize's & CvBox **************************************/
 
-typedef struct
+typedef struct CvSize
 {
     int width;
     int height;
@@ -1727,6 +1740,11 @@ typedef struct CvFileStorage CvFileStorage;
 #define CV_STORAGE_WRITE_TEXT    CV_STORAGE_WRITE
 #define CV_STORAGE_WRITE_BINARY  CV_STORAGE_WRITE
 #define CV_STORAGE_APPEND        2
+#define CV_STORAGE_MEMORY        4
+#define CV_STORAGE_FORMAT_MASK   (7<<3)
+#define CV_STORAGE_FORMAT_AUTO   0
+#define CV_STORAGE_FORMAT_XML    8
+#define CV_STORAGE_FORMAT_YAML  16
 
 /* List of attributes: */
 typedef struct CvAttrList
@@ -1867,8 +1885,6 @@ typedef struct CvModuleInfo
     CvPluginFuncInfo* func_tab;
 }
 CvModuleInfo;
-
-enum { CV_PARAM_TYPE_INT=0, CV_PARAM_TYPE_REAL=1, CV_PARAM_TYPE_STRING=2, CV_PARAM_TYPE_MAT=3 };
 
 #endif /*_CXCORE_TYPES_H_*/
 

@@ -11,13 +11,14 @@ import org.opencv.highgui.VideoCapture;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.View;
 import android.view.View.OnTouchListener;
 
 public class puzzle15View extends SampleCvViewBase implements OnTouchListener {
-    private Mat     mRgba;
+	private Mat     mRgba;
     private Mat     mRgba15;
     private Mat[]   mCells;
     private Mat[]   mCells15;
@@ -44,13 +45,13 @@ public class puzzle15View extends SampleCvViewBase implements OnTouchListener {
     }
 
     @Override
-    public void surfaceChanged(SurfaceHolder _holder, int format, int width, int height) {
-        super.surfaceChanged(_holder, format, width, height);
+	public void surfaceCreated(SurfaceHolder holder) {
         synchronized (this) {
             // initialize Mat before usage
             mRgba = new Mat();
         }
-    }
+		super.surfaceCreated(holder);
+	}
 
     public static void shuffle(int[] array) {
         for (int i = array.length; i > 1; i--) {
@@ -117,6 +118,9 @@ public class puzzle15View extends SampleCvViewBase implements OnTouchListener {
         int cols = mRgba.cols();
         int rows = mRgba.rows();
 
+        rows = rows - rows%4;
+        cols = cols - cols%4;
+
         if (mCells == null)
             createPuzzle(cols, rows);
 
@@ -135,13 +139,15 @@ public class puzzle15View extends SampleCvViewBase implements OnTouchListener {
         }
 
         drawGrid(cols, rows);
-
         Bitmap bmp = Bitmap.createBitmap(cols, rows, Bitmap.Config.ARGB_8888);
-        if (Utils.matToBitmap(mRgba15, bmp))
+        try {
+        	Utils.matToBitmap(mRgba15, bmp);
             return bmp;
-
-        bmp.recycle();
-        return null;
+        } catch(Exception e) {
+        	Log.e("org.opencv.samples.puzzle15", "Utils.matToBitmap() throws an exception: " + e.getMessage());
+            bmp.recycle();
+            return null;
+        }
     }
 
     private void drawGrid(int cols, int rows) {
@@ -179,7 +185,9 @@ public class puzzle15View extends SampleCvViewBase implements OnTouchListener {
     }
 
     public boolean onTouch(View v, MotionEvent event) {
-        int cols = mRgba.cols();
+        if(mRgba==null) return false;
+        
+    	int cols = mRgba.cols();
         int rows = mRgba.rows();
         float xoffset = (getWidth() - cols) / 2;
         float yoffset = (getHeight() - rows) / 2;

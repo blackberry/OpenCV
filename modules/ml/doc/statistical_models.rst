@@ -42,7 +42,7 @@ In this declaration, some methods are commented off. These are methods for which
 
 CvStatModel::CvStatModel
 ------------------------
-The default constuctor.
+The default constructor.
 
 .. ocv:function:: CvStatModel::CvStatModel()
 
@@ -52,7 +52,7 @@ CvStatModel::CvStatModel(...)
 -----------------------------
 The training constructor.
 
-.. ocv:function:: CvStatModel::CvStatModel( const Mat& train_data ... )
+.. ocv:function:: CvStatModel::CvStatModel()
 
 Most ML classes provide a single-step constructor and train constructors. This constructor is equivalent to the default constructor, followed by the :ocv:func:`CvStatModel::train` method with the parameters that are passed to the constructor.
 

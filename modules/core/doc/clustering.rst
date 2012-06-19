@@ -7,23 +7,25 @@ kmeans
 ------
 Finds centers of clusters and groups input samples around the clusters.
 
-.. ocv:function:: double kmeans( InputArray samples, int clusterCount, InputOutputArray labels, TermCriteria criteria, int attempts, int flags, OutputArray centers=noArray() )
+.. ocv:function:: double kmeans( InputArray data, int K, InputOutputArray bestLabels, TermCriteria criteria, int attempts, int flags, OutputArray centers=noArray() )
 
 .. ocv:pyfunction:: cv2.kmeans(data, K, criteria, attempts, flags[, bestLabels[, centers]]) -> retval, bestLabels, centers
 
-.. ocv:cfunction:: int cvKMeans2(const CvArr* samples, int nclusters, CvArr* labels, CvTermCriteria criteria, int attempts=1, CvRNG* rng=0, int flags=0, CvArr* centers=0, double* compactness=0)
+.. ocv:cfunction:: int cvKMeans2( const CvArr* samples, int cluster_count, CvArr* labels, CvTermCriteria termcrit, int attempts=1, CvRNG* rng=0, int flags=0, CvArr* _centers=0, double* compactness=0 )
 
-.. ocv:pyoldfunction:: cv.KMeans2(samples, nclusters, labels, criteria)-> None
+.. ocv:pyoldfunction:: cv.KMeans2(samples, nclusters, labels, termcrit, attempts=1, flags=0, centers=None) -> float
 
     :param samples: Floating-point matrix of input samples, one row per sample.
 
-    :param clusterCount: Number of clusters to split the set by.
+    :param cluster_count: Number of clusters to split the set by.
 
     :param labels: Input/output integer array that stores the cluster indices for every sample.
 
     :param criteria: The algorithm termination criteria, that is, the maximum number of iterations and/or the desired accuracy. The accuracy is specified as ``criteria.epsilon``. As soon as each of the cluster centers moves by less than ``criteria.epsilon`` on some iteration, the algorithm stops.
 
-    :param attempts: Flag to specify the number of times the algorithm is executed using different initial labelings. The algorithm returns the labels that yield the best compactness (see the last function parameter).
+    :param attempts: Flag to specify the number of times the algorithm is executed using different initial labellings. The algorithm returns the labels that yield the best compactness (see the last function parameter).
+
+    :param rng: CvRNG state initialized by RNG().
 
     :param flags: Flag that can take the following values:
 
@@ -35,8 +37,10 @@ Finds centers of clusters and groups input samples around the clusters.
 
     :param centers: Output matrix of the cluster centers, one row per each cluster center.
 
+    :param compactness: The returned value that is described below.
+
 The function ``kmeans`` implements a k-means algorithm that finds the
-centers of ``clusterCount`` clusters and groups the input samples
+centers of ``cluster_count`` clusters and groups the input samples
 around the clusters. As an output,
 :math:`\texttt{labels}_i` contains a 0-based cluster index for
 the sample stored in the

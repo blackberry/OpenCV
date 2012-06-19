@@ -193,20 +193,18 @@ bool checkHardwareSupport(int feature)
     return currentFeatures->have[feature];
 }
 
-#ifdef HAVE_IPP
-volatile bool useOptimizedFlag = true;
 
+volatile bool useOptimizedFlag = true;
+#ifdef HAVE_IPP
 struct IPPInitializer
 {
     IPPInitializer(void) { ippStaticInit(); }
 };
 
 IPPInitializer ippInitializer;
-#else
-volatile bool useOptimizedFlag = true;
 #endif
 
-volatile bool USE_SSE2 = false;
+volatile bool USE_SSE2 = featuresEnabled.have[CV_CPU_SSE2];
 
 void setUseOptimized( bool flag )
 {
@@ -376,6 +374,46 @@ int getThreadNum(void)
 #endif
 }
 
+#if ANDROID
+static inline int getNumberOfCPUsImpl()
+{
+   FILE* cpuPossible = fopen("/sys/devices/system/cpu/possible", "r");
+   if(!cpuPossible)
+       return 1;
+
+   char buf[2000]; //big enough for 1000 CPUs in worst possible configuration
+   char* pbuf = fgets(buf, sizeof(buf), cpuPossible);
+   fclose(cpuPossible);
+   if(!pbuf)
+      return 1;
+
+   //parse string of form "0-1,3,5-7,10,13-15"
+   int cpusAvailable = 0;
+
+   while(*pbuf)
+   {
+      const char* pos = pbuf;
+      bool range = false;
+      while(*pbuf && *pbuf != ',')
+      {
+          if(*pbuf == '-') range = true;
+          ++pbuf;
+      }
+      if(*pbuf) *pbuf++ = 0;
+      if(!range)
+        ++cpusAvailable;
+      else
+      {
+          int rstart = 0, rend = 0;
+          sscanf(pos, "%d-%d", &rstart, &rend);
+          cpusAvailable += rend - rstart + 1;
+      }
+      
+   }
+   return cpusAvailable ? cpusAvailable : 1;
+}
+#endif
+
 int getNumberOfCPUs(void)
 {
 #if defined WIN32 || defined _WIN32
@@ -383,6 +421,10 @@ int getNumberOfCPUs(void)
     GetSystemInfo( &sysinfo );
     
     return (int)sysinfo.dwNumberOfProcessors;
+#elif ANDROID
+    static int ncpus = getNumberOfCPUsImpl();
+    printf("CPUS= %d\n", ncpus);
+    return ncpus;
 #elif defined __linux__
     return (int)sysconf( _SC_NPROCESSORS_ONLN );
 #elif defined __APPLE__
@@ -410,6 +452,14 @@ int getNumberOfCPUs(void)
 #else
     return 1;
 #endif
+}
+
+const std::string& getBuildInformation()
+{
+    static std::string build_info =
+#include "version_string.inc"
+    ;
+    return build_info;
 }
 
 string format( const char* fmt, ... )
@@ -629,9 +679,10 @@ CV_IMPL const char* cvErrorStr( int status )
     case CV_StsNotImplemented :      return "The function/feature is not implemented";
     case CV_StsBadMemBlock :         return "Memory block has been corrupted";
     case CV_StsAssert :              return "Assertion failed";
-    case CV_GpuNotSupported : return "No GPU support";
-    case CV_GpuApiCallError : return "Gpu Api call";
-    case CV_GpuNppCallError : return "Npp Api call";
+    case CV_GpuNotSupported :        return "No GPU support";
+    case CV_GpuApiCallError :        return "Gpu API call";
+    case CV_OpenGlNotSupported :     return "No OpenGL support";
+    case CV_OpenGlApiCallError :     return "OpenGL API call";
     };
 
     sprintf(buf, "Unknown %s code %d", status >= 0 ? "status":"error", status);

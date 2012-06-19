@@ -1,6 +1,8 @@
 package org.opencv.samples.tutorial0;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
@@ -10,25 +12,48 @@ import android.view.Window;
 public class Sample0Base extends Activity {
     private static final String TAG            = "Sample::Activity";
 
-    public static final int     VIEW_MODE_RGBA = 0;
-    public static final int     VIEW_MODE_GRAY = 1;
-
     private MenuItem            mItemPreviewRGBA;
     private MenuItem            mItemPreviewGray;
+    private Sample0View mView;
 
-    public static int           viewMode       = VIEW_MODE_RGBA;
 
     public Sample0Base() {
         Log.i(TAG, "Instantiated new " + this.getClass());
     }
 
-    /** Called when the activity is first created. */
+    @Override
+	protected void onPause() {
+        Log.i(TAG, "onPause");
+		super.onPause();
+		mView.releaseCamera();
+	}
+
+	@Override
+	protected void onResume() {
+        Log.i(TAG, "onResume");
+		super.onResume();
+		if( !mView.openCamera() ) {
+			AlertDialog ad = new AlertDialog.Builder(this).create();  
+			ad.setCancelable(false); // This blocks the 'BACK' button  
+			ad.setMessage("Fatal error: can't open camera!");  
+			ad.setButton("OK", new DialogInterface.OnClickListener() {  
+			    public void onClick(DialogInterface dialog, int which) {  
+			        dialog.dismiss();                      
+					finish();
+			    }  
+			});  
+			ad.show();
+		}
+	}
+
+	/** Called when the activity is first created. */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         Log.i(TAG, "onCreate");
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        setContentView(new Sample0View(this));
+        mView = new Sample0View(this);
+        setContentView(mView);
     }
 
     @Override
@@ -43,9 +68,9 @@ public class Sample0Base extends Activity {
     public boolean onOptionsItemSelected(MenuItem item) {
         Log.i(TAG, "Menu Item selected " + item);
         if (item == mItemPreviewRGBA)
-            viewMode = VIEW_MODE_RGBA;
+        	mView.setViewMode(Sample0View.VIEW_MODE_RGBA);
         else if (item == mItemPreviewGray)
-            viewMode = VIEW_MODE_GRAY;
+        	mView.setViewMode(Sample0View.VIEW_MODE_GRAY);
         return true;
     }
 }

@@ -238,47 +238,18 @@ static PyObject *iplimage_repr(PyObject *self)
 
 static PyObject *iplimage_tostring(PyObject *self, PyObject *args)
 {
-  iplimage_t *pc = (iplimage_t*)self;
-  IplImage *i;
+  IplImage *i=0;
   if (!convert_to_IplImage(self, &i, "self"))
     return NULL;
   if (i == NULL)
     return NULL;
-  int bps;
-  switch (i->depth) {
-  case IPL_DEPTH_8U:
-  case IPL_DEPTH_8S:
-    bps = 1;
-    break;
-  case IPL_DEPTH_16U:
-  case IPL_DEPTH_16S:
-    bps = 2;
-    break;
-  case IPL_DEPTH_32S:
-  case IPL_DEPTH_32F:
-    bps = 4;
-    break;
-  case IPL_DEPTH_64F:
-    bps = 8;
-    break;
-  default:
-    return failmsg("Unrecognised depth %d", i->depth), (PyObject*)0;
-  }
-  int bpl = i->width * i->nChannels * bps;
-  if (PyString_Check(pc->data) && bpl == i->widthStep && pc->offset == 0 && ((bpl * i->height) == what_size(pc->data))) {
-    Py_INCREF(pc->data);
-    return pc->data;
-  } else {
-    int l = bpl * i->height;
-    char *s = new char[l];
-    int y;
-    for (y = 0; y < i->height; y++) {
-      memcpy(s + y * bpl, i->imageData + y * i->widthStep, bpl);
-    }
-    PyObject *r = PyString_FromStringAndSize(s, l);
-    delete[] s;
-    return r;
-  }
+  cv::Mat img(i);
+  size_t esz = img.elemSize();
+  int nrows = img.rows, ncols = img.cols;
+    
+  if( !img.isContinuous() )
+      img = img.clone();
+  return PyString_FromStringAndSize((char*)img.data, (Py_ssize_t)(esz*nrows*ncols));
 }
 
 static struct PyMethodDef iplimage_methods[] =
@@ -574,7 +545,7 @@ static PyObject *cvmat_array_struct(cvmat_t *cva)
 
 static PyObject *cvmatnd_array_struct(cvmatnd_t *cva)
 {
-  CvMatND *m;
+  CvMatND *m = 0;
   convert_to_CvMatND((PyObject *)cva, &m, "");
 
   arrayTrack *at = new arrayTrack;
@@ -722,7 +693,7 @@ static size_t cvmatnd_size(CvMatND *m)
 
 static PyObject *cvmatnd_tostring(PyObject *self, PyObject *args)
 {
-  CvMatND *m;
+  CvMatND *m = 0;
   if (!convert_to_CvMatND(self, &m, "self"))
     return NULL;
 
@@ -1060,7 +1031,7 @@ static PyObject *cvquadedge_repr(PyObject *self)
   char str[1000];
   sprintf(str, "<cvsubdiv2dedge(");
   char *d = str + strlen(str);
-  sprintf(d, "%zx.%d", m & ~3, (int)(m & 3));
+  sprintf(d, "%lux.%d", (unsigned long)(m & ~3), (int)(m & 3));
   d += strlen(d);
   sprintf(d, ")>");
   return PyString_FromString(str);
@@ -3412,7 +3383,7 @@ static PyObject *pycvCalcEMD2(PyObject *self, PyObject *args, PyObject *kw)
   PyObject *pyobj_cost_matrix = NULL;
   CvArr* flow=NULL;
   PyObject *pyobj_flow = NULL;
-  float lower_bound = 0.0;
+  float lower_bound = FLT_MAX;
   PyObject *userdata = NULL;
 
   if (!PyArg_ParseTupleAndKeywords(args, kw, "OOi|OOOfO", (char**)keywords,
@@ -3873,7 +3844,7 @@ static double cppKMeans(const CvArr* _samples, int cluster_count, CvArr* _labels
 static PyMethodDef old_methods[] = {
 
 #if PYTHON_USE_NUMPY
-    {"fromarray", (PyCFunction)pycvfromarray, METH_KEYWORDS, "fromarray(array) -> cvmatnd"},
+    {"fromarray", (PyCFunction)pycvfromarray, METH_KEYWORDS, "fromarray(array [, allowND]) -> CvMat"},
 #endif
 
   {"FindDataMatrix", pyfinddatamatrix, METH_VARARGS},
@@ -3917,7 +3888,7 @@ PyObject* init_cv()
   m = Py_InitModule(OLD_MODULESTR, old_methods);
   d = PyModule_GetDict(m);
 
-  PyDict_SetItemString(d, "__version__", PyString_FromString("$Rev: 4557 $"));
+  PyDict_SetItemString(d, "__version__", PyString_FromString(CV_VERSION));
   PyDict_SetItemString(d, "error", opencv_error);
 
   // Couple of warnings about strict aliasing here.  Not clear how to fix.

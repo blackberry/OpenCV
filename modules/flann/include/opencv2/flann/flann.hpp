@@ -225,7 +225,11 @@ int GenericIndex<Distance>::radiusSearch(const Mat& query, Mat& indices, Mat& di
  * @deprecated Use GenericIndex class instead
  */
 template <typename T>
-class FLANN_DEPRECATED Index_ {
+class
+#ifndef _MSC_VER
+ FLANN_DEPRECATED
+#endif
+ Index_ {
 public:
         typedef typename L2<T>::ElementType ElementType;
         typedef typename L2<T>::ResultType DistanceType;
@@ -277,6 +281,10 @@ private:
         ::cvflann::Index< L1<ElementType> >* nnIndex_L1;
 };
 
+#ifdef _MSC_VER
+template <typename T>
+class FLANN_DEPRECATED Index_;
+#endif
 
 template <typename T>
 Index_<T>::Index_(const Mat& dataset, const ::cvflann::IndexParams& params)
@@ -374,7 +382,7 @@ int Index_<T>::radiusSearch(const Mat& query, Mat& indices, Mat& dists, Distance
 
 
 template <typename Distance>
-int hierarchicalClustering(const Mat& features, Mat& centers, const ::cvflann::IndexParams& params,
+int hierarchicalClustering(const Mat& features, Mat& centers, const ::cvflann::KMeansIndexParams& params,
                            Distance d = Distance())
 {
     typedef typename Distance::ElementType ElementType;
@@ -393,7 +401,7 @@ int hierarchicalClustering(const Mat& features, Mat& centers, const ::cvflann::I
 
 
 template <typename ELEM_TYPE, typename DIST_TYPE>
-FLANN_DEPRECATED int hierarchicalClustering(const Mat& features, Mat& centers, const ::cvflann::IndexParams& params)
+FLANN_DEPRECATED int hierarchicalClustering(const Mat& features, Mat& centers, const ::cvflann::KMeansIndexParams& params)
 {
     printf("[WARNING] cv::flann::hierarchicalClustering<ELEM_TYPE,DIST_TYPE> is deprecated, use "
         "cv::flann::hierarchicalClustering<Distance> instead\n");

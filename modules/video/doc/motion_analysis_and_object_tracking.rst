@@ -4,21 +4,20 @@ Motion Analysis and Object Tracking
 .. highlight:: cpp
 
 
-
 calcOpticalFlowPyrLK
 ------------------------
 Calculates an optical flow for a sparse feature set using the iterative Lucas-Kanade method with pyramids.
 
-.. ocv:function:: void calcOpticalFlowPyrLK( InputArray prevImg, InputArray nextImg, InputArray prevPts, InputOutputArray nextPts, OutputArray status, OutputArray err, Size winSize=Size(15,15), int maxLevel=3,        TermCriteria criteria=TermCriteria(TermCriteria::COUNT+TermCriteria::EPS, 30, 0.01), double derivLambda=0.5, int flags=0 )
+.. ocv:function:: void calcOpticalFlowPyrLK( InputArray prevImg, InputArray nextImg, InputArray prevPts, InputOutputArray nextPts, OutputArray status, OutputArray err, Size winSize=Size(21,21), int maxLevel=3, TermCriteria criteria=TermCriteria(TermCriteria::COUNT+TermCriteria::EPS, 30, 0.01), int flags=0, double minEigThreshold=1e-4 )
 
-.. ocv:pyfunction:: cv2.calcOpticalFlowPyrLK(prevImg, nextImg, prevPts[, nextPts[, status[, err[, winSize[, maxLevel[, criteria[, derivLambda[, flags]]]]]]]]) -> nextPts, status, err
+.. ocv:pyfunction:: cv2.calcOpticalFlowPyrLK(prevImg, nextImg, prevPts[, nextPts[, status[, err[, winSize[, maxLevel[, criteria[, flags[, minEigThreshold]]]]]]]]) -> nextPts, status, err
 
-.. ocv:cfunction:: void cvCalcOpticalFlowPyrLK( const CvArr* prev, const CvArr* curr, CvArr* prevPyr, CvArr* currPyr, const CvPoint2D32f* prevFeatures, CvPoint2D32f* currFeatures, int count, CvSize winSize, int level, char* status, float* trackError, CvTermCriteria criteria, int flags )
-.. ocv:pyoldfunction:: cv.CalcOpticalFlowPyrLK( prev, curr, prevPyr, currPyr, prevFeatures, winSize, level, criteria, flags, guesses=None) -> (currFeatures, status, trackError)
+.. ocv:cfunction:: void cvCalcOpticalFlowPyrLK( const CvArr* prev, const CvArr* curr, CvArr* prev_pyr, CvArr* curr_pyr, const CvPoint2D32f* prev_features, CvPoint2D32f* curr_features, int count, CvSize win_size, int level, char* status, float* track_error, CvTermCriteria criteria, int flags )
+.. ocv:pyoldfunction:: cv.CalcOpticalFlowPyrLK(prev, curr, prevPyr, currPyr, prevFeatures, winSize, level, criteria, flags, guesses=None) -> (currFeatures, status, track_error)
 
-    :param prevImg: First 8-bit single-channel or 3-channel input image.
+    :param prevImg: First 8-bit input image or pyramid constructed by :ocv:func:`buildOpticalFlowPyramid`.
 
-    :param nextImg: Second input image of the same size and the same type as  ``prevImg`` .
+    :param nextImg: Second input image or pyramid of the same size and the same type as  ``prevImg``.
 
     :param prevPts: Vector of 2D points for which the flow needs to be found. The point coordinates must be single-precision floating-point numbers.
 
@@ -26,42 +25,67 @@ Calculates an optical flow for a sparse feature set using the iterative Lucas-Ka
 
     :param status: Output status vector. Each element of the vector is set to 1 if the flow for the corresponding features has been found. Otherwise, it is set to 0.
 
-    :param err: Output vector that contains the difference between patches around the original and moved points.
+    :param err: Output vector of errors. Each element of the vector is set to a error for the corresponding feature. A type of the error measure can be set in ``flags`` parameter. If the flow wasn't found then the error is not defined (use the ``status`` parameter to find such cases).
 
     :param winSize: Size of the search window at each pyramid level.
 
-    :param maxLevel: 0-based maximal pyramid level number. If set to 0, pyramids are not used (single level). If set to 1, two levels are used, and so on.
+    :param maxLevel: 0-based maximal pyramid level number. If set to 0, pyramids are not used (single level). If set to 1, two levels are used, and so on. If pyramids are passed to input then algorithm will use as many levels as pyramids have but no more than ``maxLevel``.
 
     :param criteria: Parameter specifying the termination criteria of the iterative search algorithm (after the specified maximum number of iterations  ``criteria.maxCount``  or when the search window moves by less than  ``criteria.epsilon`` .
-    
-    :param derivLambda: Not used.
 
     :param flags: Operation flags:
 
-            * **OPTFLOW_USE_INITIAL_FLOW** Use initial estimations stored in  ``nextPts`` . If the flag is not set, then ``prevPts`` is copied to ``nextPts`` and is considered as the initial estimate.
-            
-The function implements a sparse iterative version of the Lucas-Kanade optical flow in pyramids. See
-[Bouguet00]_.
+        * **OPTFLOW_USE_INITIAL_FLOW** Use initial estimations stored in  ``nextPts`` . If the flag is not set, then ``prevPts`` is copied to ``nextPts`` and is considered as the initial estimate.
+        * **OPTFLOW_LK_GET_MIN_EIGENVALS** Use minimum eigen values as a error measure (see ``minEigThreshold`` description). If the flag is not set, then L1 distance between patches around the original and a moved point divided by number of pixels in a window is used as a error measure.
 
+    :param minEigThreshold: The algorithm computes a minimum eigen value of a 2x2 normal matrix of optical flow equations (this matrix is called a spatial gradient matrix in [Bouguet00]_) divided by number of pixels in a window. If this value is less then ``minEigThreshold`` then a corresponding feature is filtered out and its flow is not computed. So it allows to remove bad points earlier and speed up the computation.
+
+The function implements a sparse iterative version of the Lucas-Kanade optical flow in pyramids. See [Bouguet00]_. The function is parallelized with the TBB library.
+
+buildOpticalFlowPyramid
+-----------------------
+Constructs the image pyramid which can be passed to :ocv:func:`calcOpticalFlowPyrLK`.
+
+.. ocv:function:: int buildOpticalFlowPyramid(InputArray img, OutputArrayOfArrays pyramid, Size winSize, int maxLevel, bool withDerivatives = true, int pyrBorder = BORDER_REFLECT_101, int derivBorder = BORDER_CONSTANT, bool tryReuseInputImage = true)
+
+.. ocv:pyfunction:: cv2.buildOpticalFlowPyramid(img, winSize, maxLevel[, pyramid[, withDerivatives[, pyrBorder[, derivBorder[, tryReuseInputImage]]]]]) -> retval, pyramid
+
+    :param img: 8-bit input image.
+
+    :param pyramid: output pyramid.
+
+    :param winSize: window size of optical flow algorithm. Must be not less than ``winSize`` argument of :ocv:func:`calcOpticalFlowPyrLK`. It is needed to calculate required padding for pyramid levels.
+
+    :param maxLevel: 0-based maximal pyramid level number.
+
+    :param withDerivatives: set to precompute gradients for the every pyramid level. If pyramid is constructed without the gradients then :ocv:func:`calcOpticalFlowPyrLK` will calculate them internally.
+
+    :param pyrBorder: the border mode for pyramid layers.
+
+    :param derivBorder: the border mode for gradients.
+
+    :param tryReuseInputImage: put ROI of input image into the pyramid if possible. You can pass ``false`` to force data copying.
+
+    :return: number of levels in constructed pyramid. Can be less than ``maxLevel``.
 
 
 calcOpticalFlowFarneback
 ----------------------------
 Computes a dense optical flow using the Gunnar Farneback's algorithm.
 
-.. ocv:function:: void calcOpticalFlowFarneback( InputArray prevImg, InputArray nextImg,                               InputOutputArray flow, double pyrScale, int levels, int winsize, int iterations, int polyN, double polySigma, int flags )
+.. ocv:function:: void calcOpticalFlowFarneback( InputArray prev, InputArray next, InputOutputArray flow, double pyr_scale, int levels, int winsize, int iterations, int poly_n, double poly_sigma, int flags )
 
-.. ocv:cfunction:: void cvCalcOpticalFlowFarneback( const CvArr* prevImg, const CvArr* nextImg, CvArr* flow, double pyrScale, int levels, int winsize, int iterations, int polyN, double polySigma, int flags )
+.. ocv:cfunction:: void cvCalcOpticalFlowFarneback( const CvArr* prev, const CvArr* next, CvArr* flow, double pyr_scale, int levels, int winsize, int iterations, int poly_n, double poly_sigma, int flags )
 
-.. ocv:pyfunction:: cv2.calcOpticalFlowFarneback(prevImg, nextImg, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags[, flow]) -> flow
+.. ocv:pyfunction:: cv2.calcOpticalFlowFarneback(prev, next, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags[, flow]) -> flow
 
-    :param prevImg: First 8-bit single-channel input image.
+    :param prev: First 8-bit single-channel input image.
 
-    :param nextImg: Second input image of the same size and the same type as  ``prevImg`` .
+    :param next: Second input image of the same size and the same type as  ``prev`` .
 
-    :param flow: Computed flow image that has the same size as  ``prevImg``  and type  ``CV_32FC2`` .
+    :param flow: Computed flow image that has the same size as  ``prev``  and type  ``CV_32FC2`` .
 
-    :param pyrScale: Parameter specifying the image scale (<1) to build pyramids for each image.  ``pyrScale=0.5``  means a classical pyramid, where each next layer is twice smaller than the previous one.
+    :param pyr_scale: Parameter specifying the image scale (<1) to build pyramids for each image.  ``pyr_scale=0.5``  means a classical pyramid, where each next layer is twice smaller than the previous one.
 
     :param levels: Number of pyramid layers including the initial image.  ``levels=1``  means that no extra layers are created and only the original images are used.
 
@@ -69,104 +93,21 @@ Computes a dense optical flow using the Gunnar Farneback's algorithm.
 
     :param iterations: Number of iterations the algorithm does at each pyramid level.
 
-    :param polyN: Size of the pixel neighborhood used to find polynomial expansion in each pixel. Larger values mean that the image will be approximated with smoother surfaces, yielding more robust algorithm and more blurred  motion field. Typically,  ``polyN`` =5 or 7.
+    :param poly_n: Size of the pixel neighborhood used to find polynomial expansion in each pixel. Larger values mean that the image will be approximated with smoother surfaces, yielding more robust algorithm and more blurred  motion field. Typically,  ``poly_n`` =5 or 7.
 
-    :param polySigma: Standard deviation of the Gaussian that is used to smooth derivatives used as a basis for the polynomial expansion. For  ``polyN=5`` ,  you can set  ``polySigma=1.1`` . For  ``polyN=7`` , a good value would be  ``polySigma=1.5`` .
-    
+    :param poly_sigma: Standard deviation of the Gaussian that is used to smooth derivatives used as a basis for the polynomial expansion. For  ``poly_n=5`` ,  you can set  ``poly_sigma=1.1`` . For  ``poly_n=7`` , a good value would be  ``poly_sigma=1.5`` .
+
     :param flags: Operation flags that can be a combination of the following:
 
             * **OPTFLOW_USE_INITIAL_FLOW** Use the input  ``flow``  as an initial flow approximation.
 
             * **OPTFLOW_FARNEBACK_GAUSSIAN** Use the Gaussian  :math:`\texttt{winsize}\times\texttt{winsize}`  filter instead of a box filter of the same size for optical flow estimation. Usually, this option gives z more accurate flow than with a box filter, at the cost of lower speed. Normally,  ``winsize``  for a Gaussian window should be set to a larger value to achieve the same level of robustness.
 
-The function finds an optical flow for each ``prevImg`` pixel using the [Farneback2003]_ alorithm so that
+The function finds an optical flow for each ``prev`` pixel using the [Farneback2003]_ algorithm so that
 
 .. math::
 
-    \texttt{prevImg} (y,x)  \sim \texttt{nextImg} ( y + \texttt{flow} (y,x)[1],  x + \texttt{flow} (y,x)[0])
-
-
-
-CalcOpticalFlowBM
------------------
-Calculates the optical flow for two images by using the block matching method.
-
-.. ocv::cfunction:: void cvCalcOpticalFlowBM( const CvArr* prev, const CvArr* curr, CvSize blockSize, CvSize shiftSize, CvSize maxRange, int usePrevious, CvArr* velx, CvArr* vely )
-
-.. ocv:pyoldfunction:: cv.CalcOpticalFlowBM(prev, curr, blockSize, shiftSize, maxRange, usePrevious, velx, vely)-> None
-
-        :param prev: First image, 8-bit, single-channel 
-
-        :param curr: Second image, 8-bit, single-channel 
-
-        :param blockSize: Size of basic blocks that are compared 
-
-        :param shiftSize: Block coordinate increments 
-
-        :param maxRange: Size of the scanned neighborhood in pixels around the block 
-
-        :param usePrevious: Flag that specifies whether to use the input velocity as initial approximations or not.
-
-        :param velx: Horizontal component of the optical flow of
-
-            .. math::
-
-                \left \lfloor   \frac{\texttt{prev->width} - \texttt{blockSize.width}}{\texttt{shiftSize.width}}   \right \rfloor \times \left \lfloor   \frac{\texttt{prev->height} - \texttt{blockSize.height}}{\texttt{shiftSize.height}}   \right \rfloor 
-
-            size, 32-bit floating-point, single-channel 
-
-        :param vely: Vertical component of the optical flow of the same size  ``velx`` , 32-bit floating-point, single-channel 
-
-
-The function calculates the optical flow for overlapped blocks ``blockSize.width x blockSize.height`` pixels each, thus the velocity fields are smaller than the original images. For every block in  ``prev``
-the functions tries to find a similar block in ``curr`` in some neighborhood of the original block or shifted by ``(velx(x0,y0), vely(x0,y0))`` block as has been calculated by previous function call (if ``usePrevious=1``)
-
-
-CalcOpticalFlowHS
------------------
-Calculates the optical flow for two images using Horn-Schunck algorithm.
-
-.. ocv::cfunction:: void cvCalcOpticalFlowHS(  const CvArr* prev, const CvArr* curr, int usePrevious, CvArr* velx, CvArr* vely, double lambda, CvTermCriteria criteria )
-
-.. ocv:pyoldfunction:: cv.CalcOpticalFlowHS(prev, curr, usePrevious, velx, vely, lambda, criteria)-> None
-
-    :param prev: First image, 8-bit, single-channel 
-
-    :param curr: Second image, 8-bit, single-channel 
-
-    :param usePrevious: Flag that specifies whether to use the input velocity as initial approximations or not.
-
-    :param velx: Horizontal component of the optical flow of the same size as input images, 32-bit floating-point, single-channel 
-
-    :param vely: Vertical component of the optical flow of the same size as input images, 32-bit floating-point, single-channel 
-
-    :param lambda: Smoothness weight. The larger it is, the smoother optical flow map you get.
-
-    :param criteria: Criteria of termination of velocity computing 
-
-The function computes the flow for every pixel of the first input image using the Horn and Schunck algorithm [Horn81]_. The function is obsolete. To track sparse features, use :ocv:func:`calcOpticalFlowPyrLK`. To track all the pixels, use :ocv:func:`calcOpticalFlowFarneback`.
-
-
-CalcOpticalFlowLK
------------------
-
-Calculates the optical flow for two images using Lucas-Kanade algorithm.
-
-.. ocv:cfunction:: void cvCalcOpticalFlowLK( const CvArr* prev, const CvArr* curr, CvSize winSize, CvArr* velx, CvArr* vely )
-
-.. ocv:pyoldfunction:: cv.CalcOpticalFlowLK(prev, curr, winSize, velx, vely)-> None
-
-    :param prev: First image, 8-bit, single-channel 
-
-    :param curr: Second image, 8-bit, single-channel 
-
-    :param winSize: Size of the averaging window used for grouping pixels 
-
-    :param velx: Horizontal component of the optical flow of the same size as input images, 32-bit floating-point, single-channel 
-
-    :param vely: Vertical component of the optical flow of the same size as input images, 32-bit floating-point, single-channel 
-
-The function computes the flow for every pixel of the first input image using the Lucas and Kanade algorithm [Lucas81]_. The function is obsolete. To track sparse features, use :ocv:func:`calcOpticalFlowPyrLK`. To track all the pixels, use :ocv:func:`calcOpticalFlowFarneback`.
+    \texttt{prev} (y,x)  \sim \texttt{next} ( y + \texttt{flow} (y,x)[1],  x + \texttt{flow} (y,x)[0])
 
 
 estimateRigidTransform
@@ -181,7 +122,7 @@ Computes an optimal affine transformation between two 2D point sets.
 
     :param dst: Second input 2D point set of the same size and the same type as ``A``, or another image.
 
-    :param fullAffine: If true, the function finds an optimal affine transformation with no additional resrictions (6 degrees of freedom). Otherwise, the class of transformations to choose from is limited to combinations of translation, rotation, and uniform scaling (5 degrees of freedom).
+    :param fullAffine: If true, the function finds an optimal affine transformation with no additional restrictions (6 degrees of freedom). Otherwise, the class of transformations to choose from is limited to combinations of translation, rotation, and uniform scaling (5 degrees of freedom).
 
 The function finds an optimal affine transform *[A|b]* (a ``2 x 3`` floating-point matrix) that approximates best the affine transformation between:
 
@@ -189,7 +130,7 @@ The function finds an optimal affine transform *[A|b]* (a ``2 x 3`` floating-poi
       Two point sets
   *
       Two raster images. In this case, the function first finds some features in the ``src`` image and finds the corresponding features in ``dst`` image. After that, the problem is reduced to the first case.
-      
+
 In case of point sets, the problem is formulated as follows: you need to find a 2x2 matrix *A* and 2x1 vector *b* so that:
 
     .. math::
@@ -197,7 +138,7 @@ In case of point sets, the problem is formulated as follows: you need to find a 
         [A^*|b^*] = arg  \min _{[A|b]}  \sum _i  \| \texttt{dst}[i] - A { \texttt{src}[i]}^T - b  \| ^2
 
     where ``src[i]`` and ``dst[i]`` are the i-th points in ``src`` and ``dst``, respectively
-    
+
     :math:`[A|b]` can be either arbitrary (when ``fullAffine=true`` ) or have a form of
 
     .. math::
@@ -256,7 +197,7 @@ Calculates a gradient orientation of a motion history image.
 
 .. ocv:pyfunction:: cv2.calcMotionGradient(mhi, delta1, delta2[, mask[, orientation[, apertureSize]]]) -> mask, orientation
 
-.. ocv:cfunction:: void cvCalcMotionGradient( const CvArr* mhi, CvArr* mask, CvArr* orientation, double delta1, double delta2, int apertureSize=3 )
+.. ocv:cfunction:: void cvCalcMotionGradient( const CvArr* mhi, CvArr* mask, CvArr* orientation, double delta1, double delta2, int aperture_size=3 )
 .. ocv:pyoldfunction:: cv.CalcMotionGradient(mhi, mask, orientation, delta1, delta2, apertureSize=3)-> None
 
     :param mhi: Motion history single-channel floating-point image.
@@ -265,9 +206,9 @@ Calculates a gradient orientation of a motion history image.
 
     :param orientation: Output motion gradient orientation image that has the same type and the same size as  ``mhi`` . Each pixel of the image is a motion orientation, from 0 to 360 degrees.
 
-    :param delta1: Minimal (or maximal) allowed difference between  ``mhi``  values within a pixel neighorhood.
-    
-    :param delta2: Maximal (or minimal) allowed difference between  ``mhi``  values within a pixel neighorhood. That is, the function finds the minimum ( :math:`m(x,y)` ) and maximum ( :math:`M(x,y)` )  ``mhi``  values over  :math:`3 \times 3`  neighborhood of each pixel and marks the motion orientation at  :math:`(x, y)`  as valid only if
+    :param delta1: Minimal (or maximal) allowed difference between  ``mhi``  values within a pixel neighborhood.
+
+    :param delta2: Maximal (or minimal) allowed difference between  ``mhi``  values within a pixel neighborhood. That is, the function finds the minimum ( :math:`m(x,y)` ) and maximum ( :math:`M(x,y)` )  ``mhi``  values over  :math:`3 \times 3`  neighborhood of each pixel and marks the motion orientation at  :math:`(x, y)`  as valid only if
 
         .. math::
 
@@ -300,13 +241,13 @@ Calculates a global motion orientation in a selected region.
 .. ocv:pyoldfunction:: cv.CalcGlobalOrientation(orientation, mask, mhi, timestamp, duration)-> float
 
     :param orientation: Motion gradient orientation image calculated by the function  :ocv:func:`calcMotionGradient` .
-    
+
     :param mask: Mask image. It may be a conjunction of a valid gradient mask, also calculated by  :ocv:func:`calcMotionGradient` , and the mask of a region whose direction needs to be calculated.
 
     :param mhi: Motion history image calculated by  :ocv:func:`updateMotionHistory` .
-    
+
     :param timestamp: Timestamp passed to  :ocv:func:`updateMotionHistory` .
-    
+
     :param duration: Maximum duration of a motion track in milliseconds, passed to  :ocv:func:`updateMotionHistory` .
 
 The function calculates an average
@@ -326,8 +267,8 @@ Splits a motion history image into a few parts corresponding to separate indepen
 
 .. ocv:pyfunction:: cv2.segmentMotion(mhi, timestamp, segThresh[, segmask]) -> segmask, boundingRects
 
-.. ocv:cfunction:: CvSeq* cvSegmentMotion( const CvArr* mhi, CvArr* segMask, CvMemStorage* storage, double timestamp, double segThresh )
-.. ocv:pyoldfunction:: cv.SegmentMotion(mhi, segMask, storage, timestamp, segThresh)-> None
+.. ocv:cfunction:: CvSeq* cvSegmentMotion( const CvArr* mhi, CvArr* seg_mask, CvMemStorage* storage, double timestamp, double seg_thresh )
+.. ocv:pyoldfunction:: cv.SegmentMotion(mhi, seg_mask, storage, timestamp, seg_thresh) -> boundingRects
 
     :param mhi: Motion history image.
 
@@ -338,7 +279,7 @@ Splits a motion history image into a few parts corresponding to separate indepen
     :param timestamp: Current time in milliseconds or other units.
 
     :param segThresh: Segmentation threshold that is recommended to be equal to the interval between motion history "steps" or greater.
- 
+
 
 The function finds all of the motion segments and marks them in ``segmask`` with individual values (1,2,...). It also computes a vector with ROIs of motion connected components. After that the motion direction for every component can be calculated with :ocv:func:`calcGlobalOrientation` using the extracted mask of the particular component.
 
@@ -353,17 +294,19 @@ Finds an object center, size, and orientation.
 
 .. ocv:pyfunction:: cv2.CamShift(probImage, window, criteria) -> retval, window
 
-.. ocv:cfunction:: int cvCamShift( const CvArr* probImage, CvRect window, CvTermCriteria criteria, CvConnectedComp* comp, CvBox2D* box=NULL )
+.. ocv:cfunction:: int cvCamShift( const CvArr* prob_image, CvRect window, CvTermCriteria criteria, CvConnectedComp* comp, CvBox2D* box=NULL )
 
-.. ocv:pyoldfunction:: cv.CamShift(probImage, window, criteria)-> (int, comp, box)
+.. ocv:pyoldfunction:: cv.CamShift(prob_image, window, criteria) -> (int, comp, box)
 
     :param probImage: Back projection of the object histogram. See  :ocv:func:`calcBackProject` .
-    
+
     :param window: Initial search window.
 
     :param criteria: Stop criteria for the underlying  :ocv:func:`meanShift` .
 
-The function implements the CAMSHIFT object tracking algrorithm
+    :returns: (in old interfaces) Number of iterations CAMSHIFT took to converge
+
+The function implements the CAMSHIFT object tracking algorithm
 [Bradski98]_.
 First, it finds an object center using
 :ocv:func:`meanShift` and then adjusts the window size and finds the optimal rotation. The function returns the rotated rectangle structure that includes the object position, size, and orientation. The next position of the search window can be obtained with ``RotatedRect::boundingRect()`` .
@@ -380,14 +323,16 @@ Finds an object on a back projection image.
 
 .. ocv:pyfunction:: cv2.meanShift(probImage, window, criteria) -> retval, window
 
-.. ocv:cfunction:: int cvMeanShift( const CvArr* probImage, CvRect window, CvTermCriteria criteria, CvConnectedComp* comp )
-.. ocv:pyoldfunction:: cv.MeanShift(probImage, window, criteria)-> comp
+.. ocv:cfunction:: int cvMeanShift( const CvArr* prob_image, CvRect window, CvTermCriteria criteria, CvConnectedComp* comp )
+.. ocv:pyoldfunction:: cv.MeanShift(prob_image, window, criteria) -> comp
 
     :param probImage: Back projection of the object histogram. See  :ocv:func:`calcBackProject` for details.
-    
+
     :param window: Initial search window.
 
     :param criteria: Stop criteria for the iterative search algorithm.
+
+    :returns: Number of iterations CAMSHIFT took to converge.
 
 The function implements the iterative object search algorithm. It takes the input back projection of an object and the initial position. The mass center in ``window`` of the back projection image is computed and the search window center shifts to the mass center. The procedure is repeated until the specified number of iterations ``criteria.maxCount`` is done or until the window center shifts by less than ``criteria.epsilon`` . The algorithm is used inside
 :ocv:func:`CamShift` and, unlike
@@ -419,17 +364,17 @@ The constructors.
 
 .. ocv:function:: KalmanFilter::KalmanFilter(int dynamParams, int measureParams, int controlParams=0, int type=CV_32F)
 
-.. ocv:pyfunction:: cv2.KalmanFilter(dynamParams, measureParams[, controlParams[, type]]) -> <KalmanFilter object>
+.. ocv:pyfunction:: cv2.KalmanFilter([dynamParams, measureParams[, controlParams[, type]]]) -> <KalmanFilter object>
 
-.. ocv:cfunction:: CvKalman* cvCreateKalman( int dynamParams, int measureParams, int controlParams=0 )
-.. ocv:pyoldfunction:: cv.CreateKalman(dynamParams, measureParams, controlParams=0) -> CvKalman
+.. ocv:cfunction:: CvKalman* cvCreateKalman( int dynam_params, int measure_params, int control_params=0 )
+.. ocv:pyoldfunction:: cv.CreateKalman(dynam_params, measure_params, control_params=0) -> CvKalman
 
     The full constructor.
-    
+
     :param dynamParams: Dimensionality of the state.
-    
+
     :param measureParams: Dimensionality of the measurement.
-    
+
     :param controlParams: Dimensionality of the control vector.
 
     :param type: Type of the created matrices that should be ``CV_32F`` or ``CV_64F``.
@@ -443,9 +388,9 @@ Re-initializes Kalman filter. The previous content is destroyed.
 .. ocv:function:: void KalmanFilter::init(int dynamParams, int measureParams, int controlParams=0, int type=CV_32F)
 
     :param dynamParams: Dimensionalityensionality of the state.
-    
+
     :param measureParams: Dimensionality of the measurement.
-    
+
     :param controlParams: Dimensionality of the control vector.
 
     :param type: Type of the created matrices that should be ``CV_32F`` or ``CV_64F``.
@@ -457,10 +402,10 @@ Computes a predicted state.
 
 .. ocv:function:: const Mat& KalmanFilter::predict(const Mat& control=Mat())
 
-.. ocv:pyfunction:: cv2.KalmanFilter.predict([, control]) -> retval
+.. ocv:pyfunction:: cv2.KalmanFilter.predict([control]) -> retval
 
 .. ocv:cfunction:: const CvMat* cvKalmanPredict( CvKalman* kalman, const CvMat* control=NULL)
-.. ocv:pyoldfunction:: cv.KalmanPredict(kalman, control=None) -> cvmat
+.. ocv:pyoldfunction:: cv.KalmanPredict(kalman, control=None) -> mat
 
     :param control: The optional input control
 
@@ -474,19 +419,20 @@ Updates the predicted state from the measurement.
 .. ocv:pyfunction:: cv2.KalmanFilter.correct(measurement) -> retval
 
 .. ocv:cfunction:: const CvMat* cvKalmanCorrect( CvKalman* kalman, const CvMat* measurement )
-.. ocv:pyoldfunction:: cv.KalmanCorrect(kalman, measurement) -> cvmat
 
-    :param control: The measured system parameters
+.. ocv:pyoldfunction:: cv.KalmanCorrect(kalman, measurement) -> mat
+
+    :param measurement: The measured system parameters
 
 
 BackgroundSubtractor
 --------------------
 
-.. ocv:class:: BackgroundSubtractor
+.. ocv:class:: BackgroundSubtractor : public Algorithm
 
 Base class for background/foreground segmentation. ::
 
-    class BackgroundSubtractor
+    class BackgroundSubtractor : public Algorithm
     {
     public:
         virtual ~BackgroundSubtractor();
@@ -518,7 +464,7 @@ Computes a background image.
 .. ocv:function:: void BackgroundSubtractor::getBackgroundImage(OutputArray backgroundImage) const
 
     :param backgroundImage: The output background image.
-    
+
 .. note:: Sometimes the background image can be very blurry, as it contain the average background statistics.
 
 BackgroundSubtractorMOG
@@ -526,22 +472,22 @@ BackgroundSubtractorMOG
 
 .. ocv:class:: BackgroundSubtractorMOG : public BackgroundSubtractor
 
-Gaussian Mixture-based Backbround/Foreground Segmentation Algorithm.
+Gaussian Mixture-based Background/Foreground Segmentation Algorithm.
 
-The class implements the algorithm described in P. KadewTraKuPong and R. Bowden, *An improved adaptive background mixture model for real-time tracking with shadow detection*, Proc. 2nd European Workshp on Advanced Video-Based Surveillance Systems, 2001: http://personal.ee.surrey.ac.uk/Personal/R.Bowden/publications/avbs01/avbs01.pdf
+The class implements the algorithm described in P. KadewTraKuPong and R. Bowden, *An improved adaptive background mixture model for real-time tracking with shadow detection*, Proc. 2nd European Workshop on Advanced Video-Based Surveillance Systems, 2001: http://personal.ee.surrey.ac.uk/Personal/R.Bowden/publications/avbs01/avbs01.pdf
 
 
 
 
 BackgroundSubtractorMOG::BackgroundSubtractorMOG
 ------------------------------------------------
-The contructors
+The constructors.
 
 .. ocv:function:: BackgroundSubtractorMOG::BackgroundSubtractorMOG()
 
 .. ocv:function:: BackgroundSubtractorMOG::BackgroundSubtractorMOG(int history, int nmixtures, double backgroundRatio, double noiseSigma=0)
 
-.. ocv:pyfunction:: cv2.BackgroundSubtractorMOG(history, nmixtures, backgroundRatio[, noiseSigma]) -> <BackgroundSubtractorMOG object>
+.. ocv:pyfunction:: cv2.BackgroundSubtractorMOG([history, nmixtures, backgroundRatio[, noiseSigma]]) -> <BackgroundSubtractorMOG object>
 
     :param history: Length of the history.
 
@@ -567,46 +513,46 @@ Parameters are the same as in :ocv:funcx:`BackgroundSubtractor::operator()`
 
 BackgroundSubtractorMOG2
 ------------------------
-Gaussian Mixture-based Backbround/Foreground Segmentation Algorithm.
+Gaussian Mixture-based Background/Foreground Segmentation Algorithm.
 
 .. ocv:class:: BackgroundSubtractorMOG2 : public BackgroundSubtractor
 
     Here are important members of the class that control the algorithm, which you can set after constructing the class instance:
 
     .. ocv:member:: int nmixtures
-    
-        Maximum allowed number of mixture comonents. Actual number is determined dynamically per pixel.
+
+        Maximum allowed number of mixture components. Actual number is determined dynamically per pixel.
 
     .. ocv:member:: float backgroundRatio
-    
+
         Threshold defining whether the component is significant enough to be included into the background model ( corresponds to ``TB=1-cf`` from the paper??which paper??). ``cf=0.1 => TB=0.9`` is default. For ``alpha=0.001``, it means that the mode should exist for approximately 105 frames before it is considered foreground.
 
     .. ocv:member:: float varThresholdGen
-    
+
         Threshold for the squared Mahalanobis distance that helps decide when a sample is close to the existing components (corresponds to ``Tg``). If it is not close to any component, a new component is generated. ``3 sigma => Tg=3*3=9`` is default. A smaller ``Tg`` value generates more components. A higher ``Tg`` value may result in a small number of components but they can grow too large.
 
     .. ocv:member:: float fVarInit
-    
+
         Initial variance for the newly generated components. It affects the speed of adaptation. The parameter value is based on your estimate of the typical standard deviation from the images. OpenCV uses 15 as a reasonable value.
 
-    .. ocv:member:: float fVarMin 
-    
+    .. ocv:member:: float fVarMin
+
         Parameter used to further control the variance.
 
     .. ocv:member:: float fVarMax
-    
+
         Parameter used to further control the variance.
 
     .. ocv:member:: float fCT
-        
+
         Complexity reduction parameter. This parameter defines the number of samples needed to accept to prove the component exists. ``CT=0.05`` is a default value for all the samples. By setting ``CT=0`` you get an algorithm very similar to the standard Stauffer&Grimson algorithm.
 
     .. ocv:member:: uchar nShadowDetection
-    
+
         The value for marking shadow pixels in the output foreground mask. Default value is 127.
 
     .. ocv:member:: float fTau
-        
+
         Shadow threshold. The shadow is detected if the pixel is a darker version of the background. ``Tau`` is a threshold defining how much darker the shadow can be. ``Tau= 0.5`` means that if a pixel is more than twice darker then it is not shadow. See Prati,Mikic,Trivedi,Cucchiarra, *Detecting Moving Shadows...*, IEEE PAMI,2003.
 
 
@@ -623,7 +569,7 @@ The constructors.
 
 .. ocv:function:: BackgroundSubtractorMOG2::BackgroundSubtractorMOG2()
 
-.. ocv:function:: BackgroundSubtractorMOG2::BackgroundSubtractorMOG2(int history, float varThreshold, bool bShadowDetection=1)
+.. ocv:function:: BackgroundSubtractorMOG2::BackgroundSubtractorMOG2( int history, float varThreshold, bool bShadowDetection=true )
 
     :param history: Length of the history.
 
@@ -659,7 +605,7 @@ See :ocv:func:`BackgroundSubtractor::getBackgroundImage`.
 
 .. [Davis97] Davis, J.W. and Bobick, A.F. “The Representation and Recognition of Action Using Temporal Templates”, CVPR97, 1997
 
-.. [Farneback2003] Gunnar Farneback, Two-frame motion estimation based on polynomial expansion, Lecture Notes in Computer Science, 2003, (2749), , 363-370. 
+.. [Farneback2003] Gunnar Farneback, Two-frame motion estimation based on polynomial expansion, Lecture Notes in Computer Science, 2003, (2749), , 363-370.
 
 .. [Horn81] Berthold K.P. Horn and Brian G. Schunck. Determining Optical Flow. Artificial Intelligence, 17, pp. 185-203, 1981.
 

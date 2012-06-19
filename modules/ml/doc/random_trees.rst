@@ -9,7 +9,7 @@ Random trees have been introduced by Leo Breiman and Adele Cutler:
 http://www.stat.berkeley.edu/users/breiman/RandomForests/
 . The algorithm can deal with both classification and regression problems. Random trees is a collection (ensemble) of tree predictors that is called
 *forest*
-further in this section (the term has been also introduced by L. Breiman). The classification works as follows: the random trees classifier takes the input feature vector, classifies it with every tree in the forest, and outputs the class label that recieved the majority of "votes". In case of a regression, the classifier response is the average of the responses over all the trees in the forest.
+further in this section (the term has been also introduced by L. Breiman). The classification works as follows: the random trees classifier takes the input feature vector, classifies it with every tree in the forest, and outputs the class label that received the majority of "votes". In case of a regression, the classifier response is the average of the responses over all the trees in the forest.
 
 All the trees are trained with the same parameters but on different training sets. These sets are generated from the original training set using the bootstrap procedure: for each training set, you randomly select the same number of vectors as in the original set ( ``=N`` ). The vectors are chosen with replacement. That is, some vectors will occur more than once and some will be absent. At each node of each trained tree,  not all the variables are used to find the best split, but a random subset of them. With each node a new subset is generated. However, its size is fixed for all the nodes and all the trees. It is a training parameter set to
 :math:`\sqrt{number\_of\_variables}` by default. None of the built trees are pruned.
@@ -42,7 +42,7 @@ For the random trees usage example, please, see letter_recog.cpp sample in OpenC
 
 CvRTParams
 ----------
-.. ocv:class:: CvRTParams
+.. ocv:struct:: CvRTParams : public CvDTreeParams
 
     Training parameters of random trees.
 
@@ -53,25 +53,31 @@ CvRTParams::CvRTParams:
 -----------------------
 The constructors.
 
-.. ocv:function:: CvRTParams::CvRTParams()  
+.. ocv:function:: CvRTParams::CvRTParams()
 
 .. ocv:function:: CvRTParams::CvRTParams( int max_depth, int min_sample_count, float regression_accuracy, bool use_surrogates, int max_categories, const float* priors, bool calc_var_importance, int nactive_vars, int max_num_of_trees_in_the_forest, float forest_accuracy, int termcrit_type )
+
+    :param max_depth: the depth of the tree. A low value will likely underfit and conversely a high value will likely overfit. The optimal value can be obtained using cross validation or other suitable methods.
+
+    :param min_sample_count: minimum samples required at a leaf node for it to be split. A reasonable value is a small percentage of the total data e.g. 1%.
+
+    :param max_categories: Cluster possible values of a categorical variable into ``K`` :math:`\leq` ``max_categories`` clusters to find a suboptimal split. If a discrete variable, on which the training procedure tries to make a split, takes more than ``max_categories`` values, the precise best subset estimation may take a very long time because the algorithm is exponential. Instead, many decision trees engines (including ML) try to find sub-optimal split in this case by clustering all the samples into ``max_categories`` clusters that is some categories are merged together. The clustering is applied only in ``n``>2-class classification problems for categorical variables with ``N > max_categories`` possible values. In case of regression and 2-class classification the optimal split can be found efficiently without employing clustering, thus the parameter is not used in these cases.
 
     :param calc_var_importance: If true then variable importance will be calculated and then it can be retrieved by :ocv:func:`CvRTrees::get_var_importance`.
 
     :param nactive_vars: The size of the randomly selected subset of features at each tree node and that are used to find the best split(s). If you set it to 0 then the size will be set to the square root of the total number of features.
 
-    :param max_num_of_trees_in_the_forest: The maximum number of trees in the forest (suprise, suprise).
+    :param max_num_of_trees_in_the_forest: The maximum number of trees in the forest (surprise, surprise). Typically the more trees you have the better the accuracy. However, the improvement in accuracy generally diminishes and asymptotes pass a certain number of trees. Also to keep in mind, the number of tree increases the prediction time linearly.
 
     :param forest_accuracy: Sufficient accuracy (OOB error).
 
     :param termcrit_type: The type of the termination criteria:
-     
+
         * **CV_TERMCRIT_ITER** Terminate learning by the ``max_num_of_trees_in_the_forest``;
-        
+
         * **CV_TERMCRIT_EPS** Terminate learning by the ``forest_accuracy``;
 
-        * **CV_TERMCRIT_ITER | CV_TERMCRIT_EPS** Use both termination criterias.
+        * **CV_TERMCRIT_ITER | CV_TERMCRIT_EPS** Use both termination criteria.
 
 For meaning of other parameters see :ocv:func:`CvDTreeParams::CvDTreeParams`.
 
@@ -88,7 +94,7 @@ The default constructor sets all parameters to default values which are differen
 
 CvRTrees
 --------
-.. ocv:class:: CvRTrees
+.. ocv:class:: CvRTrees : public CvStatModel
 
     The class implements the random forest predictor as described in the beginning of this section.
 
@@ -106,11 +112,13 @@ Trains the Random Trees model.
 
 The method :ocv:func:`CvRTrees::train` is very similar to the method :ocv:func:`CvDTree::train` and follows the generic method :ocv:func:`CvStatModel::train` conventions. All the parameters specific to the algorithm training are passed as a :ocv:class:`CvRTParams` instance. The estimate of the training error (``oob-error``) is stored in the protected class member ``oob_error``.
 
+The function is parallelized with the TBB library.
+
 CvRTrees::predict
 -----------------
 Predicts the output for an input sample.
 
-.. ocv:function:: double CvRTrees::predict(  const Mat& sample,  const Mat& missing=Mat() ) const
+.. ocv:function:: float CvRTrees::predict( const Mat& sample, const Mat& missing=Mat() ) const
 
 .. ocv:function:: float CvRTrees::predict( const CvMat* sample, const CvMat* missing = 0 ) const
 
@@ -148,7 +156,7 @@ Returns the variable importance array.
 
 .. ocv:function:: const CvMat* CvRTrees::get_var_importance()
 
-.. ocv:pyfunction:: cv2.RTrees.getVarImportance() -> importanceVector
+.. ocv:pyfunction:: cv2.RTrees.getVarImportance() -> retval
 
 The method returns the variable importance vector, computed at the training stage when ``CvRTParams::calc_var_importance`` is set to true. If this flag was set to false, the ``NULL`` pointer is returned. This differs from the decision trees where variable importance can be computed anytime after the training.
 
@@ -159,9 +167,9 @@ Retrieves the proximity measure between two training samples.
 
 .. ocv:function:: float CvRTrees::get_proximity( const CvMat* sample1, const CvMat* sample2, const CvMat* missing1 = 0, const CvMat* missing2 = 0 ) const
 
-    :param sample_1: The first sample.
+    :param sample1: The first sample.
 
-    :param sample_2: The second sample.
+    :param sample2: The second sample.
 
     :param missing1: Optional missing measurement mask of the first sample.
 
@@ -173,7 +181,7 @@ CvRTrees::calc_error
 --------------------
 Returns error of the random forest.
 
-.. ocv:function:: float CvRTrees::calc_error( CvMLData* data, int type, std::vector<float> *resp = 0 )
+.. ocv:function:: float CvRTrees::calc_error( CvMLData* data, int type, std::vector<float>* resp=0 )
 
 The method is identical to :ocv:func:`CvDTree::calc_error` but uses the random forest as predictor.
 

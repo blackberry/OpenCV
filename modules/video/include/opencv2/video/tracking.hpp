@@ -48,7 +48,7 @@
 #define __OPENCV_TRACKING_HPP__
 
 #include "opencv2/core/core.hpp"
-#include "opencv2/imgproc/imgproc_c.h"
+#include "opencv2/imgproc/imgproc.hpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -59,21 +59,6 @@ extern "C" {
 \****************************************************************************************/
 
 /************************************ optical flow ***************************************/
-
-/* Calculates optical flow for 2 images using classical Lucas & Kanade algorithm */
-CVAPI(void)  cvCalcOpticalFlowLK( const CvArr* prev, const CvArr* curr,
-                                  CvSize win_size, CvArr* velx, CvArr* vely );
-
-/* Calculates optical flow for 2 images using block matching algorithm */
-CVAPI(void)  cvCalcOpticalFlowBM( const CvArr* prev, const CvArr* curr,
-                                  CvSize block_size, CvSize shift_size,
-                                  CvSize max_range, int use_previous,
-                                  CvArr* velx, CvArr* vely );
-
-/* Calculates Optical flow for 2 images using Horn & Schunck algorithm */
-CVAPI(void)  cvCalcOpticalFlowHS( const CvArr* prev, const CvArr* curr,
-                                  int use_previous, CvArr* velx, CvArr* vely,
-                                  double lambda, CvTermCriteria criteria );
 
 #define  CV_LKFLOW_PYR_A_READY       1
 #define  CV_LKFLOW_PYR_B_READY       2
@@ -311,20 +296,26 @@ public:
     Mat temp5;
 };
 
+enum
+{
+    OPTFLOW_USE_INITIAL_FLOW = CV_LKFLOW_INITIAL_GUESSES,
+    OPTFLOW_LK_GET_MIN_EIGENVALS = CV_LKFLOW_GET_MIN_EIGENVALS,
+    OPTFLOW_FARNEBACK_GAUSSIAN = 256
+};
 
-enum { OPTFLOW_USE_INITIAL_FLOW=4, OPTFLOW_FARNEBACK_GAUSSIAN=256 };
+//! constructs a pyramid which can be used as input for calcOpticalFlowPyrLK
+CV_EXPORTS_W int buildOpticalFlowPyramid(InputArray img, OutputArrayOfArrays pyramid,
+                                         Size winSize, int maxLevel, bool withDerivatives = true,
+                                         int pyrBorder = BORDER_REFLECT_101, int derivBorder = BORDER_CONSTANT,
+                                         bool tryReuseInputImage = true);
 
 //! computes sparse optical flow using multi-scale Lucas-Kanade algorithm
 CV_EXPORTS_W void calcOpticalFlowPyrLK( InputArray prevImg, InputArray nextImg,
                            InputArray prevPts, CV_OUT InputOutputArray nextPts,
                            OutputArray status, OutputArray err,
                            Size winSize=Size(21,21), int maxLevel=3,
-                           TermCriteria criteria=TermCriteria(
-                            TermCriteria::COUNT+TermCriteria::EPS,
-                            30, 0.01),
-                           double derivLambda=0.5,
-                           int flags=0,
-                           double minEigThreshold=1e-4);
+                           TermCriteria criteria=TermCriteria(TermCriteria::COUNT+TermCriteria::EPS, 30, 0.01),
+                           int flags=0, double minEigThreshold=1e-4);
 
 //! computes dense optical flow using Farneback algorithm
 CV_EXPORTS_W void calcOpticalFlowFarneback( InputArray prev, InputArray next,

@@ -39,6 +39,9 @@ class VideoSynthBase(object):
             buf = cv2.add(buf, noise, dtype=cv2.CV_8UC3)
         return True, buf
 
+    def isOpened(self):
+        return True
+
 class Chess(VideoSynthBase):
     def __init__(self, **kw):
         super(Chess, self).__init__(**kw)
@@ -87,33 +90,47 @@ class Chess(VideoSynthBase):
         self.draw_quads(dst, self.black_quads, (10, 10, 10))
 
 
-
 classes = dict(chess=Chess)
-
-def create_capture(source):
-    '''
-      source: <int> or '<int>' or '<filename>' or 'synth:<params>'
-    '''
-    try: source = int(source)
-    except ValueError: pass
-    else:
-        return cv2.VideoCapture(source)
-    source = str(source).strip()
-    if source.startswith('synth'):
-        ss = filter(None, source.split(':'))
-        params = dict( s.split('=') for s in ss[1:] )
-        try: Class = classes[params['class']]
-        except: Class = VideoSynthBase
-
-        return Class(**params)
-    return cv2.VideoCapture(source)
-
 
 presets = dict(
     empty = 'synth:',
     lena = 'synth:bg=../cpp/lena.jpg:noise=0.1',
     chess = 'synth:class=chess:bg=../cpp/lena.jpg:noise=0.1:size=640x480'
 )
+
+
+def create_capture(source = 0, fallback = presets['chess']):
+    '''
+      source: <int> or '<int>|<filename>|synth [:<param_name>=<value> [:...]]'
+    '''
+    source = str(source).strip()
+    chunks = source.split(':')
+    # hanlde drive letter ('c:', ...)
+    if len(chunks) > 1 and len(chunks[0]) == 1 and chunks[0].isalpha():
+        chunks[1] = chunks[0] + ':' + chunks[1]
+        del chunks[0]
+
+    source = chunks[0]
+    try: source = int(source)
+    except ValueError: pass
+    params = dict( s.split('=') for s in chunks[1:] )
+    
+    cap = None
+    if source == 'synth':
+        Class = classes.get(params.get('class', None), VideoSynthBase)
+        try: cap = Class(**params)
+        except: pass
+    else:
+        cap = cv2.VideoCapture(source)
+        if 'size' in params:
+            w, h = map(int, params['size'].split('x'))
+            cap.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, w)
+            cap.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, h)
+    if cap is None or not cap.isOpened():
+        print 'Warning: unable to open video source: ', source
+        if fallback is not None:
+            return create_capture(fallback, None)
+    return cap
 
 if __name__ == '__main__':
     import sys
@@ -127,7 +144,7 @@ if __name__ == '__main__':
     args = dict(args)
     shotdir = args.get('--shotdir', '.')
     if len(sources) == 0:
-        sources = [ presets['chess'] ]
+        sources = [ 0 ]
 
     print 'Press SPACE to save current frame'
 
@@ -139,7 +156,7 @@ if __name__ == '__main__':
             ret, img = cap.read()
             imgs.append(img)
             cv2.imshow('capture %d' % i, img)
-        ch = cv2.waitKey(1)
+        ch = 0xFF & cv2.waitKey(1)
         if ch == 27:
             break
         if ch == ord(' '):
@@ -148,3 +165,4 @@ if __name__ == '__main__':
                 cv2.imwrite(fn, img)
                 print fn, 'saved'
             shot_idx += 1
+    cv2.destroyAllWindows() 			

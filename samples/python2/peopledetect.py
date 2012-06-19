@@ -38,7 +38,7 @@ if __name__ == '__main__':
             print 'loading error'
             continue
 
-        found = hog.detectMultiScale(img, winStride=(8,8), padding=(32,32), scale=1.05)
+        found, w = hog.detectMultiScale(img, winStride=(8,8), padding=(32,32), scale=1.05)
         found_filtered = []
         for ri, r in enumerate(found):
             for qi, q in enumerate(found):
@@ -50,6 +50,7 @@ if __name__ == '__main__':
         draw_detections(img, found_filtered, 3)
         print '%d (%d) found' % (len(found_filtered), len(found))
         cv2.imshow('img', img)
-        ch = cv2.waitKey()
+        ch = 0xFF & cv2.waitKey()
         if ch == 27:
             break
+    cv2.destroyAllWindows() 			

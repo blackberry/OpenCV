@@ -44,6 +44,7 @@
 #define __OPENCV_CONTRIB_HPP__
 
 #include "opencv2/core/core.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/features2d/features2d.hpp"
 #include "opencv2/objdetect/objdetect.hpp"
 
@@ -605,7 +606,374 @@ namespace cv
     };
     
     CV_EXPORTS void polyfit(const Mat& srcx, const Mat& srcy, Mat& dst, int order);
+
+	class CV_EXPORTS Directory
+    {
+	    public:
+			static std::vector<std::string> GetListFiles  ( const std::string& path, const std::string & exten = "*", bool addPath = true );
+			static std::vector<std::string> GetListFilesR ( const std::string& path, const std::string & exten = "*", bool addPath = true );
+			static std::vector<std::string> GetListFolders( const std::string& path, const std::string & exten = "*", bool addPath = true );
+    };
+
+    /*
+     * Generation of a set of different colors by the following way:
+     * 1) generate more then need colors (in "factor" times) in RGB,
+     * 2) convert them to Lab,
+     * 3) choose the needed count of colors from the set that are more different from
+     *    each other,
+     * 4) convert the colors back to RGB
+     */
+    CV_EXPORTS void generateColors( std::vector<Scalar>& colors, size_t count, size_t factor=100 );
+
+
+    /*
+     *  Estimate the rigid body motion from frame0 to frame1. The method is based on the paper
+     *  "Real-Time Visual Odometry from Dense RGB-D Images", F. Steinbucker, J. Strum, D. Cremers, ICCV, 2011.
+     */
+    enum { ROTATION          = 1,
+           TRANSLATION       = 2,
+           RIGID_BODY_MOTION = 4
+         };
+    CV_EXPORTS bool RGBDOdometry( Mat& Rt, const Mat& initRt,
+                                  const Mat& image0, const Mat& depth0, const Mat& mask0,
+                                  const Mat& image1, const Mat& depth1, const Mat& mask1,
+                                  const Mat& cameraMatrix, float minDepth=0.f, float maxDepth=4.f, float maxDepthDiff=0.07f,
+                                  const std::vector<int>& iterCounts=std::vector<int>(),
+                                  const std::vector<float>& minGradientMagnitudes=std::vector<float>(),
+                                  int transformType=RIGID_BODY_MOTION );
+
+    /**
+    *Bilinear interpolation technique.
+    *
+    *The value of a desired cortical pixel is obtained through a bilinear interpolation of the values
+    *of the four nearest neighbouring Cartesian pixels to the center of the RF.
+    *The same principle is applied to the inverse transformation.
+    *
+    *More details can be found in http://dx.doi.org/10.1007/978-3-642-23968-7_5
+    */
+    class CV_EXPORTS LogPolar_Interp
+    {
+    public:
+        
+        LogPolar_Interp() {}
+
+        /**
+        *Constructor
+        *\param w the width of the input image
+        *\param h the height of the input image
+        *\param center the transformation center: where the output precision is maximal
+        *\param R the number of rings of the cortical image (default value 70 pixel)
+        *\param ro0 the radius of the blind spot (default value 3 pixel)
+        *\param full \a 1 (default value) means that the retinal image (the inverse transform) is computed within the circumscribing circle. 
+        *            \a 0 means that the retinal image is computed within the inscribed circle.
+        *\param S the number of sectors of the cortical image (default value 70 pixel).
+        *         Its value is usually internally computed to obtain a pixel aspect ratio equals to 1.
+        *\param sp \a 1 (default value) means that the parameter \a S is internally computed. 
+        *          \a 0 means that the parameter \a S is provided by the user.
+        */
+        LogPolar_Interp(int w, int h, Point2i center, int R=70, double ro0=3.0,
+                        int interp=INTER_LINEAR, int full=1, int S=117, int sp=1);
+        /**
+        *Transformation from Cartesian image to cortical (log-polar) image.
+        *\param source the Cartesian image
+        *\return the transformed image (cortical image)
+        */
+        const Mat to_cortical(const Mat &source);
+        /**
+        *Transformation from cortical image to retinal (inverse log-polar) image.
+        *\param source the cortical image
+        *\return the transformed image (retinal image)
+        */
+        const Mat to_cartesian(const Mat &source);
+        /**
+        *Destructor
+        */
+        ~LogPolar_Interp();
+    
+    protected:
+        
+        Mat Rsri;
+        Mat Csri;
+
+        int S, R, M, N;
+        int top, bottom,left,right;
+        double ro0, romax, a, q;
+        int interp;
+
+        Mat ETAyx;
+        Mat CSIyx;
+
+        void create_map(int M, int N, int R, int S, double ro0);
+    };
+
+    /**
+    *Overlapping circular receptive fields technique
+    *
+    *The Cartesian plane is divided in two regions: the fovea and the periphery.
+    *The fovea (oversampling) is handled by using the bilinear interpolation technique described above, whereas in
+    *the periphery we use the overlapping Gaussian circular RFs.
+    *
+    *More details can be found in http://dx.doi.org/10.1007/978-3-642-23968-7_5
+    */
+    class CV_EXPORTS LogPolar_Overlapping
+    {        
+    public:
+        LogPolar_Overlapping() {}
+        
+        /**
+        *Constructor
+        *\param w the width of the input image
+        *\param h the height of the input image
+        *\param center the transformation center: where the output precision is maximal
+        *\param R the number of rings of the cortical image (default value 70 pixel)
+        *\param ro0 the radius of the blind spot (default value 3 pixel)
+        *\param full \a 1 (default value) means that the retinal image (the inverse transform) is computed within the circumscribing circle. 
+        *            \a 0 means that the retinal image is computed within the inscribed circle.
+        *\param S the number of sectors of the cortical image (default value 70 pixel).
+        *         Its value is usually internally computed to obtain a pixel aspect ratio equals to 1.
+        *\param sp \a 1 (default value) means that the parameter \a S is internally computed. 
+        *          \a 0 means that the parameter \a S is provided by the user.
+        */
+        LogPolar_Overlapping(int w, int h, Point2i center, int R=70,
+                             double ro0=3.0, int full=1, int S=117, int sp=1);
+        /**
+        *Transformation from Cartesian image to cortical (log-polar) image.
+        *\param source the Cartesian image
+        *\return the transformed image (cortical image)
+        */
+        const Mat to_cortical(const Mat &source);
+        /**
+        *Transformation from cortical image to retinal (inverse log-polar) image.
+        *\param source the cortical image
+        *\return the transformed image (retinal image)
+        */
+        const Mat to_cartesian(const Mat &source);
+        /**
+        *Destructor
+        */
+        ~LogPolar_Overlapping();
+        
+    protected:
+        
+        Mat Rsri;
+        Mat Csri;
+        vector<int> Rsr;
+        vector<int> Csr;
+        vector<double> Wsr;
+
+        int S, R, M, N, ind1;
+        int top, bottom,left,right;
+        double ro0, romax, a, q;
+
+        struct kernel
+        {
+            kernel() { w = 0; }
+            vector<double> weights;
+            int w;
+        };
+
+        Mat ETAyx;
+        Mat CSIyx;
+        vector<kernel> w_ker_2D;
+
+        void create_map(int M, int N, int R, int S, double ro0);
+    };
+
+    /**
+    * Adjacent receptive fields technique
+    *
+    *All the Cartesian pixels, whose coordinates in the cortical domain share the same integer part, are assigned to the same RF.
+    *The precision of the boundaries of the RF can be improved by breaking each pixel into subpixels and assigning each of them to the correct RF.
+    *This technique is implemented from: Traver, V., Pla, F.: Log-polar mapping template design: From task-level requirements
+    *to geometry parameters. Image Vision Comput. 26(10) (2008) 1354-1370
+    *
+    *More details can be found in http://dx.doi.org/10.1007/978-3-642-23968-7_5
+    */
+    class CV_EXPORTS LogPolar_Adjacent
+    {
+    public:
+        LogPolar_Adjacent() {}
+        
+        /**
+         *Constructor
+         *\param w the width of the input image
+         *\param h the height of the input image
+         *\param center the transformation center: where the output precision is maximal
+         *\param R the number of rings of the cortical image (default value 70 pixel)
+         *\param ro0 the radius of the blind spot (default value 3 pixel)
+         *\param smin the size of the subpixel (default value 0.25 pixel)
+         *\param full \a 1 (default value) means that the retinal image (the inverse transform) is computed within the circumscribing circle. 
+         *            \a 0 means that the retinal image is computed within the inscribed circle.
+         *\param S the number of sectors of the cortical image (default value 70 pixel).
+         *         Its value is usually internally computed to obtain a pixel aspect ratio equals to 1.
+         *\param sp \a 1 (default value) means that the parameter \a S is internally computed. 
+         *          \a 0 means that the parameter \a S is provided by the user.
+         */  
+        LogPolar_Adjacent(int w, int h, Point2i center, int R=70, double ro0=3.0, double smin=0.25, int full=1, int S=117, int sp=1);
+        /**
+         *Transformation from Cartesian image to cortical (log-polar) image.
+         *\param source the Cartesian image
+         *\return the transformed image (cortical image)
+         */
+        const Mat to_cortical(const Mat &source);
+        /**
+         *Transformation from cortical image to retinal (inverse log-polar) image.
+         *\param source the cortical image
+         *\return the transformed image (retinal image)
+         */
+        const Mat to_cartesian(const Mat &source);
+        /**
+         *Destructor
+         */
+        ~LogPolar_Adjacent();
+
+    protected:
+        struct pixel
+        {
+            pixel() { u = v = 0; a = 0.; }
+            int u;
+            int v;
+            double a;
+        };
+        int S, R, M, N;
+        int top, bottom,left,right;
+        double ro0, romax, a, q;
+        vector<vector<pixel> > L;
+        vector<double> A;
+
+        void subdivide_recursively(double x, double y, int i, int j, double length, double smin);
+        bool get_uv(double x, double y, int&u, int&v);
+        void create_map(int M, int N, int R, int S, double ro0, double smin);
+    };
+    
+    CV_EXPORTS Mat subspaceProject(InputArray W, InputArray mean, InputArray src);
+    CV_EXPORTS Mat subspaceReconstruct(InputArray W, InputArray mean, InputArray src);
+    
+    class CV_EXPORTS LDA
+    {
+    public:
+        // Initializes a LDA with num_components (default 0) and specifies how
+        // samples are aligned (default dataAsRow=true).
+        LDA(int num_components = 0) :
+            _num_components(num_components) {};
+
+        // Initializes and performs a Discriminant Analysis with Fisher's
+        // Optimization Criterion on given data in src and corresponding labels
+        // in labels. If 0 (or less) number of components are given, they are
+        // automatically determined for given data in computation.
+        LDA(const Mat& src, vector<int> labels,
+                int num_components = 0) :
+                    _num_components(num_components)
+        {
+            this->compute(src, labels); //! compute eigenvectors and eigenvalues
+        }
+
+        // Initializes and performs a Discriminant Analysis with Fisher's
+        // Optimization Criterion on given data in src and corresponding labels
+        // in labels. If 0 (or less) number of components are given, they are
+        // automatically determined for given data in computation.
+        LDA(InputArray src, InputArray labels,
+                int num_components = 0) :
+                    _num_components(num_components)
+        {
+            this->compute(src, labels); //! compute eigenvectors and eigenvalues
+        }
+
+        // Serializes this object to a given filename.
+        void save(const string& filename) const;
+
+        // Deserializes this object from a given filename.
+        void load(const string& filename);
+
+        // Serializes this object to a given cv::FileStorage.
+        void save(FileStorage& fs) const;
+
+            // Deserializes this object from a given cv::FileStorage.
+        void load(const FileStorage& node);
+
+        // Destructor.
+        ~LDA() {}
+
+        //! Compute the discriminants for data in src and labels.
+        void compute(InputArray src, InputArray labels);
+
+        // Projects samples into the LDA subspace.
+        Mat project(InputArray src);
+
+        // Reconstructs projections from the LDA subspace.
+        Mat reconstruct(InputArray src);
+
+        // Returns the eigenvectors of this LDA.
+        Mat eigenvectors() const { return _eigenvectors; };
+
+        // Returns the eigenvalues of this LDA.
+        Mat eigenvalues() const { return _eigenvalues; }
+        
+    protected:
+        bool _dataAsRow;
+        int _num_components;
+        Mat _eigenvectors;
+        Mat _eigenvalues;
+
+        void lda(InputArray src, InputArray labels);
+    };
+    
+    class CV_EXPORTS FaceRecognizer
+    {
+    public:
+        //! virtual destructor
+        virtual ~FaceRecognizer() {}
+
+        // Trains a FaceRecognizer.
+        virtual void train(InputArray src, InputArray labels) = 0;
+
+        // Gets a prediction from a FaceRecognizer.
+        virtual int predict(InputArray src) const = 0;
+
+        // Serializes this object to a given filename.
+        virtual void save(const string& filename) const;
+
+        // Deserializes this object from a given filename.
+        virtual void load(const string& filename);
+
+        // Serializes this object to a given cv::FileStorage.
+        virtual void save(FileStorage& fs) const = 0;
+
+        // Deserializes this object from a given cv::FileStorage.
+        virtual void load(const FileStorage& fs) = 0;
+        
+        // Returns eigenvectors (if any)
+        virtual Mat eigenvectors() const { return Mat(); }
+    };
+    
+    CV_EXPORTS Ptr<FaceRecognizer> createEigenFaceRecognizer(int num_components = 0);
+    CV_EXPORTS Ptr<FaceRecognizer> createFisherFaceRecognizer(int num_components = 0);
+    CV_EXPORTS Ptr<FaceRecognizer> createLBPHFaceRecognizer(int radius=1, int neighbors=8,
+                                                            int grid_x=8, int grid_y=8);
+    
+    enum
+    {
+        COLORMAP_AUTUMN = 0,
+        COLORMAP_BONE = 1,
+        COLORMAP_JET = 2,
+        COLORMAP_WINTER = 3,
+        COLORMAP_RAINBOW = 4,
+        COLORMAP_OCEAN = 5,
+        COLORMAP_SUMMER = 6,
+        COLORMAP_SPRING = 7,
+        COLORMAP_COOL = 8,
+        COLORMAP_HSV = 9,
+        COLORMAP_PINK = 10,
+        COLORMAP_HOT = 11,
+        COLORMAP_MKPJ1 = 12,
+        COLORMAP_MKPJ2 = 13
+    };
+    
+    CV_EXPORTS void applyColorMap(InputArray src, OutputArray dst, int colormap);
+    
+    CV_EXPORTS bool initModule_contrib();
 }
+
 
 #include "opencv2/contrib/retina.hpp"
 

@@ -95,7 +95,7 @@ struct LshStats
  */
 inline std::ostream& operator <<(std::ostream& out, const LshStats& stats)
 {
-    size_t w = 20;
+    int w = 20;
     out << "Lsh Table Stats:\n" << std::setw(w) << std::setiosflags(std::ios::right) << "N buckets : "
     << stats.n_buckets_ << "\n" << std::setw(w) << std::setiosflags(std::ios::right) << "mean size : "
     << std::setiosflags(std::ios::left) << stats.bucket_size_mean_ << "\n" << std::setw(w)
@@ -151,7 +151,7 @@ public:
     LshTable(unsigned int /*feature_size*/, unsigned int /*key_size*/)
     {
         std::cerr << "LSH is not implemented for that type" << std::endl;
-        throw;
+        assert(0);
     }
 
     /** Add a feature to the table
@@ -161,7 +161,7 @@ public:
     void add(unsigned int value, const ElementType* feature)
     {
         // Add the value to the corresponding bucket
-        BucketKey key = getKey(feature);
+        BucketKey key = (lsh::BucketKey)getKey(feature);
 
         switch (speed_level_) {
         case kArray:
@@ -232,7 +232,7 @@ public:
     size_t getKey(const ElementType* /*feature*/) const
     {
         std::cerr << "LSH is not implemented for that type" << std::endl;
-        throw;
+        assert(0);
         return 1;
     }
 
@@ -257,7 +257,7 @@ private:
     void initialize(size_t key_size)
     {
         speed_level_ = kHash;
-        key_size_ = key_size;
+        key_size_ = (unsigned)key_size;
     }
 
     /** Optimize the table for speed/space
@@ -414,7 +414,7 @@ inline LshStats LshTable<unsigned char>::getStats() const
 
     if (!buckets_speed_.empty()) {
         for (BucketsSpeed::const_iterator pbucket = buckets_speed_.begin(); pbucket != buckets_speed_.end(); ++pbucket) {
-            stats.bucket_sizes_.push_back(pbucket->size());
+            stats.bucket_sizes_.push_back((lsh::FeatureIndex)pbucket->size());
             stats.bucket_size_mean_ += pbucket->size();
         }
         stats.bucket_size_mean_ /= buckets_speed_.size();
@@ -422,7 +422,7 @@ inline LshStats LshTable<unsigned char>::getStats() const
     }
     else {
         for (BucketsSpace::const_iterator x = buckets_space_.begin(); x != buckets_space_.end(); ++x) {
-            stats.bucket_sizes_.push_back(x->second.size());
+            stats.bucket_sizes_.push_back((lsh::FeatureIndex)x->second.size());
             stats.bucket_size_mean_ += x->second.size();
         }
         stats.bucket_size_mean_ /= buckets_space_.size();

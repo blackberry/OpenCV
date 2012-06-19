@@ -192,7 +192,9 @@ void print_variable_importance( CvDTree* dtree, const char** var_desc )
     }
 
     printf( "Print variable importance information? (y/n) " );
-    scanf( "%1s", input );
+    int values_read = scanf( "%1s", input );
+    CV_Assert(values_read == 1);
+
     if( input[0] != 'y' && input[0] != 'Y' )
         return;
 
@@ -202,7 +204,7 @@ void print_variable_importance( CvDTree* dtree, const char** var_desc )
         if( var_desc )
         {
             char buf[100];
-            int len = strchr( var_desc[i], '(' ) - var_desc[i] - 1;
+            int len = (int)(strchr( var_desc[i], '(' ) - var_desc[i] - 1);
             strncpy( buf, var_desc[i], len );
             buf[len] = '\0';
             printf( "%s", buf );
@@ -230,7 +232,9 @@ void interactive_classification( CvDTree* dtree, const char** var_desc )
         const CvDTreeNode* node;
         
         printf( "Start/Proceed with interactive mushroom classification (y/n): " );
-        scanf( "%1s", input );
+        int values_read = scanf( "%1s", input );
+        CV_Assert(values_read == 1);
+
         if( input[0] != 'y' && input[0] != 'Y' )
             break;
         printf( "Enter 1-letter answers, '?' for missing/unknown value...\n" ); 
@@ -252,7 +256,8 @@ void interactive_classification( CvDTree* dtree, const char** var_desc )
                 const int* map = data->cat_map->data.i + data->cat_ofs->data.i[vi];
 
                 printf( "%s: ", var_desc[vi] );
-                scanf( "%1s", input );
+                values_read = scanf( "%1s", input );
+                CV_Assert(values_read == 1);
 
                 if( input[0] == '?' )
                 {

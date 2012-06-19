@@ -184,7 +184,7 @@ icvCreateHidHaarClassifierCascade( CvHaarClassifierCascade* cascade )
     int datasize;
     int total_classifiers = 0;
     int total_nodes = 0;
-    char errorstr[100];
+    char errorstr[1000];
     CvHidHaarClassifier* haar_classifier_ptr;
     CvHidHaarTreeNode* haar_node_ptr;
     CvSize orig_window_size;
@@ -657,8 +657,6 @@ CV_IMPL int
 cvRunHaarClassifierCascadeSum( const CvHaarClassifierCascade* _cascade,
                                CvPoint pt, double& stage_sum, int start_stage )
 {
-    int result = -1;
-
     int p_offset, pq_offset;
     int i, j;
     double mean, variance_norm_factor;
@@ -690,11 +688,8 @@ cvRunHaarClassifierCascadeSum( const CvHaarClassifierCascade* _cascade,
 
     if( cascade->is_tree )
     {
-        CvHidHaarStageClassifier* ptr;
+        CvHidHaarStageClassifier* ptr = cascade->stage_classifier;
         assert( start_stage == 0 );
-
-        result = 1;
-        ptr = cascade->stage_classifier;
 
         while( ptr )
         {
@@ -1505,7 +1500,8 @@ cvLoadHaarClassifierCascade( const char* directory, CvSize orig_window_size )
         fseek( f, 0, SEEK_END );
         size = ftell( f );
         fseek( f, 0, SEEK_SET );
-        fread( ptr, 1, size, f );
+        size_t elements_read = fread( ptr, 1, size, f );
+        CV_Assert(elements_read == (size_t)(size));
         fclose(f);
         input_cascade[i] = ptr;
         ptr += size;

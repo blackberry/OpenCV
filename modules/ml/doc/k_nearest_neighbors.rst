@@ -7,7 +7,7 @@ The algorithm caches all training samples and predicts the response for a new sa
 
 CvKNearest
 ----------
-.. ocv:class:: CvKNearest
+.. ocv:class:: CvKNearest : public CvStatModel
 
 The class implements K-Nearest Neighbors model as described in the beginning of this section. 
 
@@ -78,6 +78,8 @@ For each input vector, the neighbors are sorted by their distances to the vector
 In case of C++ interface you can use output pointers to empty matrices and the function will allocate memory itself.
 
 If only a single input vector is passed, all output matrices are optional and the predicted value is returned by the method.
+
+The function is parallelized with the TBB library.
 
 CvKNearest::get_max_k
 ---------------------

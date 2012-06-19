@@ -1,14 +1,13 @@
 package org.opencv.test.calib3d;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.opencv.calib3d.Calib3d;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfDouble;
+import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.MatOfPoint3f;
 import org.opencv.core.Point;
-import org.opencv.core.Point3;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.test.OpenCVTestCase;
@@ -176,15 +175,17 @@ public class Calib3dTest extends OpenCVTestCase {
 
     public void testFindChessboardCornersMatSizeMat() {
         Size patternSize = new Size(9, 6);
-        Calib3d.findChessboardCorners(grayChess, patternSize, dst);
-        assertTrue(!dst.empty());
+        MatOfPoint2f corners = new MatOfPoint2f();
+        Calib3d.findChessboardCorners(grayChess, patternSize, corners);
+        assertTrue(!corners.empty());
     }
 
     public void testFindChessboardCornersMatSizeMatInt() {
         Size patternSize = new Size(9, 6);
-        Calib3d.findChessboardCorners(grayChess, patternSize, dst, Calib3d.CALIB_CB_ADAPTIVE_THRESH + Calib3d.CALIB_CB_NORMALIZE_IMAGE
+        MatOfPoint2f corners = new MatOfPoint2f();
+        Calib3d.findChessboardCorners(grayChess, patternSize, corners, Calib3d.CALIB_CB_ADAPTIVE_THRESH + Calib3d.CALIB_CB_NORMALIZE_IMAGE
                 + Calib3d.CALIB_CB_FAST_CHECK);
-        assertTrue(!dst.empty());
+        assertTrue(!corners.empty());
     }
 
     public void testFindCirclesGridDefaultMatSizeMat() {
@@ -235,21 +236,21 @@ public class Calib3dTest extends OpenCVTestCase {
     }
 
     public void testFindFundamentalMatListOfPointListOfPoint() {
-        List<Point> pts1 = new ArrayList<Point>();
-        List<Point> pts2 = new ArrayList<Point>();
-
         int minFundamentalMatPoints = 8;
+
+    	MatOfPoint2f pts = new MatOfPoint2f();
+    	pts.alloc(minFundamentalMatPoints);
+
         for (int i = 0; i < minFundamentalMatPoints; i++) {
             double x = Math.random() * 100 - 50;
             double y = Math.random() * 100 - 50;
-            pts1.add(new Point(x, y));
-            pts2.add(new Point(x, y));
+            pts.put(i, 0, x, y); //add(new Point(x, y));
         }
 
-        Mat fm = Calib3d.findFundamentalMat(pts1, pts2);
+        Mat fm = Calib3d.findFundamentalMat(pts, pts);
 
         truth = new Mat(3, 3, CvType.CV_64F);
-        truth.put(0, 0, 0, -0.5, -0.5, 0.5, 0, 0, 0.5, 0, 0);
+        truth.put(0, 0, 0, -0.577, 0.288, 0.577, 0, 0.288, -0.288, -0.288, 0);
         assertMatEqual(truth, fm, EPS);
     }
 
@@ -270,14 +271,18 @@ public class Calib3dTest extends OpenCVTestCase {
     }
 
     public void testFindHomographyListOfPointListOfPoint() {
-        List<Point> originalPoints = new ArrayList<Point>();
-        List<Point> transformedPoints = new ArrayList<Point>();
+    	final int NUM = 20;
+    	
+    	MatOfPoint2f originalPoints = new MatOfPoint2f();
+    	originalPoints.alloc(NUM);
+    	MatOfPoint2f transformedPoints = new MatOfPoint2f();
+    	transformedPoints.alloc(NUM);
 
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < NUM; i++) {
             double x = Math.random() * 100 - 50;
             double y = Math.random() * 100 - 50;
-            originalPoints.add(new Point(x, y));
-            transformedPoints.add(new Point(y, x));
+            originalPoints.put(i, 0, x, y);
+            transformedPoints.put(i, 0, y, x);
         }
 
         Mat hmg = Calib3d.findHomography(originalPoints, transformedPoints);
@@ -497,20 +502,23 @@ public class Calib3dTest extends OpenCVTestCase {
         intrinsics.put(0, 2, 640 / 2);
         intrinsics.put(1, 2, 480 / 2);
 
-        List<Point3> points3d = new ArrayList<Point3>();
-        List<Point> points2d = new ArrayList<Point>();
-        int minPnpPointsNum = 4;
+        final int minPnpPointsNum = 4;
+        
+        MatOfPoint3f points3d = new MatOfPoint3f();
+        points3d.alloc(minPnpPointsNum);
+        MatOfPoint2f points2d = new MatOfPoint2f();
+        points2d.alloc(minPnpPointsNum);
 
         for (int i = 0; i < minPnpPointsNum; i++) {
             double x = Math.random() * 100 - 50;
             double y = Math.random() * 100 - 50;
-            points2d.add(new Point(x, y));
-            points3d.add(new Point3(0, y, x));
+            points2d.put(i, 0, x, y); //add(new Point(x, y));
+            points3d.put(i, 0, 0, y, x); // add(new Point3(0, y, x));
         }
 
         Mat rvec = new Mat();
         Mat tvec = new Mat();
-        Calib3d.solvePnP(points3d, points2d, intrinsics, new Mat(), rvec, tvec);
+        Calib3d.solvePnP(points3d, points2d, intrinsics, new MatOfDouble(), rvec, tvec);
 
         Mat truth_rvec = new Mat(3, 1, CvType.CV_64F);
         truth_rvec.put(0, 0, 0, Math.PI / 2, 0);

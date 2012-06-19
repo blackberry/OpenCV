@@ -43,7 +43,10 @@
 #ifndef __OPENCV_GPU_LIMITS_GPU_HPP__
 #define __OPENCV_GPU_LIMITS_GPU_HPP__
 
-namespace cv { namespace gpu { namespace device
+#include <limits>
+#include "common.hpp"
+
+namespace cv { namespace gpu { namespace device 
 {
     template<class T> struct numeric_limits
     {
@@ -87,11 +90,11 @@ namespace cv { namespace gpu { namespace device
         static const bool is_signed = (char)-1 == -1;
     };
 
-     template<> struct numeric_limits<signed char>
+    template<> struct numeric_limits<signed char>
     {
         typedef char type;
-        __device__ __forceinline__ static type min() { return CHAR_MIN; };
-        __device__ __forceinline__ static type max() { return CHAR_MAX; };
+        __device__ __forceinline__ static type min() { return SCHAR_MIN; };
+        __device__ __forceinline__ static type max() { return SCHAR_MAX; };
         __device__ __forceinline__ static type epsilon();
         __device__ __forceinline__ static type round_error();
         __device__ __forceinline__ static type denorm_min();
@@ -227,6 +230,6 @@ namespace cv { namespace gpu { namespace device
         __device__ __forceinline__ static type signaling_NaN();
         static const bool is_signed = true;
     };
-}}}
+}}} // namespace cv { namespace gpu { namespace device {
 
 #endif // __OPENCV_GPU_LIMITS_GPU_HPP__

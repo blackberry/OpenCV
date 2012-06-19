@@ -1,9 +1,10 @@
 '''
-  Coherence-enhancing filtering example
+Coherence-enhancing filtering example
+=====================================
 
-  inspired by  
-    Joachim Weickert "Coherence-Enhancing Shock Filters"
-    http://www.mia.uni-saarland.de/Publications/weickert-dagm03.pdf
+inspired by  
+  Joachim Weickert "Coherence-Enhancing Shock Filters"
+  http://www.mia.uni-saarland.de/Publications/weickert-dagm03.pdf
 '''
 
 import numpy as np
@@ -64,8 +65,9 @@ if __name__ == '__main__':
     cv2.imshow('src', src)
     update()
     while True:
-        ch = cv2.waitKey()
+        ch = 0xFF & cv2.waitKey()
         if ch == ord(' '):
             update()
         if ch == 27:
             break
+    cv2.destroyAllWindows() 			

@@ -26,7 +26,7 @@ if __name__ == '__main__':
         need_update = False
         thrs = cv2.getTrackbarPos('threshold', 'distrans')
         mark = cv2.Canny(img, thrs, 3*thrs)
-        dist, labels = cv2.distanceTransform(~mark, cv.CV_DIST_L2, 5)
+        dist, labels = cv2.distanceTransformWithLabels(~mark, cv.CV_DIST_L2, 5)
         if voronoi:
             vis = cm[np.uint8(labels)]
         else:
@@ -44,7 +44,7 @@ if __name__ == '__main__':
 
 
     while True:
-        ch = cv2.waitKey(50)
+        ch = 0xFF & cv2.waitKey(50)
         if ch == 27:
             break
         if ch == ord('v'):
@@ -53,4 +53,5 @@ if __name__ == '__main__':
             update()
         if need_update:
             update()
+    cv2.destroyAllWindows() 			
       

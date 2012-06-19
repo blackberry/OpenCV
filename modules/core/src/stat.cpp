@@ -41,6 +41,7 @@
 //M*/
 
 #include "precomp.hpp"
+#include <climits>
 
 namespace cv
 {
@@ -65,13 +66,16 @@ static int sum_(const T* src0, const uchar* mask, ST* dst, int len, int cn )
     const T* src = src0;
     if( !mask )
     {
-        int i;
+        int i=0;
         int k = cn % 4;
         if( k == 1 )
         {
             ST s0 = dst[0];
-            for( i = 0; i <= len - 4; i += 4, src += cn*4 )
+
+			#if CV_ENABLE_UNROLLED
+            for(; i <= len - 4; i += 4, src += cn*4 )
                 s0 += src[0] + src[cn] + src[cn*2] + src[cn*3];
+            #endif
             for( ; i < len; i++, src += cn )
                 s0 += src[0];
             dst[0] = s0;
@@ -151,6 +155,7 @@ static int sum_(const T* src0, const uchar* mask, ST* dst, int len, int cn )
             if( mask[i] )
             {
                 int k = 0;
+				#if CV_ENABLE_UNROLLED
                 for( ; k <= cn - 4; k += 4 )
                 {
                     ST s0, s1;
@@ -161,6 +166,7 @@ static int sum_(const T* src0, const uchar* mask, ST* dst, int len, int cn )
                     s1 = dst[k+3] + src[k+3];
                     dst[k+2] = s0; dst[k+3] = s1;
                 }
+                #endif
                 for( ; k < cn; k++ )
                     dst[k] += src[k];
                 nzm++;
@@ -169,7 +175,7 @@ static int sum_(const T* src0, const uchar* mask, ST* dst, int len, int cn )
     return nzm;
 }
 
-    
+
 static int sum8u( const uchar* src, const uchar* mask, int* dst, int len, int cn )
 { return sum_(src, mask, dst, len, cn); }
 
@@ -195,17 +201,21 @@ typedef int (*SumFunc)(const uchar*, const uchar* mask, uchar*, int, int);
 
 static SumFunc sumTab[] =
 {
-    (SumFunc)sum8u, (SumFunc)sum8s, (SumFunc)sum16u, (SumFunc)sum16s,
-    (SumFunc)sum32s, (SumFunc)sum32f, (SumFunc)sum64f, 0
+    (SumFunc)GET_OPTIMIZED(sum8u), (SumFunc)sum8s,
+    (SumFunc)sum16u, (SumFunc)sum16s,
+    (SumFunc)sum32s,
+    (SumFunc)GET_OPTIMIZED(sum32f), (SumFunc)sum64f,
+    0
 };
 
-        
 template<typename T>
 static int countNonZero_(const T* src, int len )
 {
-    int i, nz = 0;
-    for( i = 0; i <= len - 4; i += 4 )
+    int i=0, nz = 0;
+	#if CV_ENABLE_UNROLLED
+    for(; i <= len - 4; i += 4 )
         nz += (src[i] != 0) + (src[i+1] != 0) + (src[i+2] != 0) + (src[i+3] != 0);
+    #endif
     for( ; i < len; i++ )
         nz += src[i] != 0;
     return nz;
@@ -227,16 +237,16 @@ static int countNonZero64f( const double* src, int len )
 { return countNonZero_(src, len); }
 
 typedef int (*CountNonZeroFunc)(const uchar*, int);
-    
+
 static CountNonZeroFunc countNonZeroTab[] =
 {
-    (CountNonZeroFunc)countNonZero8u, (CountNonZeroFunc)countNonZero8u,
-    (CountNonZeroFunc)countNonZero16u, (CountNonZeroFunc)countNonZero16u,
-    (CountNonZeroFunc)countNonZero32s, (CountNonZeroFunc)countNonZero32f,
-    (CountNonZeroFunc)countNonZero64f, 0
+    (CountNonZeroFunc)GET_OPTIMIZED(countNonZero8u), (CountNonZeroFunc)GET_OPTIMIZED(countNonZero8u),
+    (CountNonZeroFunc)GET_OPTIMIZED(countNonZero16u), (CountNonZeroFunc)GET_OPTIMIZED(countNonZero16u),
+    (CountNonZeroFunc)GET_OPTIMIZED(countNonZero32s), (CountNonZeroFunc)GET_OPTIMIZED(countNonZero32f),
+    (CountNonZeroFunc)GET_OPTIMIZED(countNonZero64f), 0
 };
 
-    
+
 template<typename T, typename ST, typename SQT>
 static int sumsqr_(const T* src0, const uchar* mask, ST* sum, SQT* sqsum, int len, int cn )
 {
@@ -386,12 +396,12 @@ typedef int (*SumSqrFunc)(const uchar*, const uchar* mask, uchar*, uchar*, int, 
 
 static SumSqrFunc sumSqrTab[] =
 {
-    (SumSqrFunc)sqsum8u, (SumSqrFunc)sqsum8s, (SumSqrFunc)sqsum16u, (SumSqrFunc)sqsum16s,
-    (SumSqrFunc)sqsum32s, (SumSqrFunc)sqsum32f, (SumSqrFunc)sqsum64f, 0
+    (SumSqrFunc)GET_OPTIMIZED(sqsum8u), (SumSqrFunc)sqsum8s, (SumSqrFunc)sqsum16u, (SumSqrFunc)sqsum16s,
+    (SumSqrFunc)sqsum32s, (SumSqrFunc)GET_OPTIMIZED(sqsum32f), (SumSqrFunc)sqsum64f, 0
 };
 
 }
-    
+
 cv::Scalar cv::sum( InputArray _src )
 {
     Mat src = _src.getMat();
@@ -417,12 +427,12 @@ cv::Scalar cv::sum( InputArray _src )
         blockSize = std::min(blockSize, intSumBlockSize);
         _buf.allocate(cn);
         buf = _buf;
-    
+
         for( k = 0; k < cn; k++ )
             buf[k] = 0;
         esz = src.elemSize();
     }
-        
+
     for( size_t i = 0; i < it.nplanes; i++, ++it )
     {
         for( j = 0; j < total; j += blockSize )
@@ -462,7 +472,7 @@ int cv::countNonZero( InputArray _src )
     
     return nz;
 }    
-    
+
 cv::Scalar cv::mean( InputArray _src, InputArray _mask )
 {
     Mat src = _src.getMat(), mask = _mask.getMat();
@@ -521,7 +531,7 @@ cv::Scalar cv::mean( InputArray _src, InputArray _mask )
     return s*(nz0 ? 1./nz0 : 0);
 }    
 
-    
+
 void cv::meanStdDev( InputArray _src, OutputArray _mean, OutputArray _sdv, InputArray _mask )
 {
     Mat src = _src.getMat(), mask = _mask.getMat();
@@ -608,7 +618,7 @@ void cv::meanStdDev( InputArray _src, OutputArray _mean, OutputArray _sdv, Input
         Mat dst = _dst.getMat();
         int dcn = (int)dst.total();
         CV_Assert( dst.type() == CV_64F && dst.isContinuous() &&
-                  (dst.cols == 1 || dst.rows == 1) && dcn >= cn );
+                   (dst.cols == 1 || dst.rows == 1) && dcn >= cn );
         double* dptr = dst.ptr<double>();
         for( k = 0; k < cn; k++ )
             dptr[k] = sptr[k];
@@ -699,16 +709,18 @@ static void minMaxIdx_32f(const float* src, const uchar* mask, float* minval, fl
 static void minMaxIdx_64f(const double* src, const uchar* mask, double* minval, double* maxval,
                           size_t* minidx, size_t* maxidx, int len, size_t startidx )
 { minMaxIdx_(src, mask, minval, maxval, minidx, maxidx, len, startidx ); }    
-    
+
 typedef void (*MinMaxIdxFunc)(const uchar*, const uchar*, int*, int*, size_t*, size_t*, int, size_t);
 
 static MinMaxIdxFunc minmaxTab[] =
 {
-    (MinMaxIdxFunc)minMaxIdx_8u, (MinMaxIdxFunc)minMaxIdx_8s, (MinMaxIdxFunc)minMaxIdx_16u,
-    (MinMaxIdxFunc)minMaxIdx_16s, (MinMaxIdxFunc)minMaxIdx_32s, (MinMaxIdxFunc)minMaxIdx_32f, 
-    (MinMaxIdxFunc)minMaxIdx_64f, 0
+    (MinMaxIdxFunc)GET_OPTIMIZED(minMaxIdx_8u), (MinMaxIdxFunc)GET_OPTIMIZED(minMaxIdx_8s),
+    (MinMaxIdxFunc)GET_OPTIMIZED(minMaxIdx_16u), (MinMaxIdxFunc)GET_OPTIMIZED(minMaxIdx_16s),
+    (MinMaxIdxFunc)GET_OPTIMIZED(minMaxIdx_32s),
+    (MinMaxIdxFunc)GET_OPTIMIZED(minMaxIdx_32f), (MinMaxIdxFunc)GET_OPTIMIZED(minMaxIdx_64f),
+    0
 };
-    
+
 static void ofs2idx(const Mat& a, size_t ofs, int* idx)
 {
     int i, d = a.dims;
@@ -728,7 +740,7 @@ static void ofs2idx(const Mat& a, size_t ofs, int* idx)
             idx[i] = -1;
     }
 }
-    
+
 }
 
 void cv::minMaxIdx(InputArray _src, double* minVal,
@@ -780,9 +792,9 @@ void cv::minMaxIdx(InputArray _src, double* minVal,
     if( maxIdx )
         ofs2idx(src, maxidx, maxIdx);
 }    
-        
+
 void cv::minMaxLoc( InputArray _img, double* minVal, double* maxVal,
-                Point* minLoc, Point* maxLoc, InputArray mask )
+                    Point* minLoc, Point* maxLoc, InputArray mask )
 {
     Mat img = _img.getMat();
     CV_Assert(img.dims <= 2);
@@ -793,7 +805,7 @@ void cv::minMaxLoc( InputArray _img, double* minVal, double* maxVal,
     if( maxLoc )
         std::swap(maxLoc->x, maxLoc->y);
 }
-    
+
 /****************************************************************************************\
 *                                         norm                                           *
 \****************************************************************************************/
@@ -801,15 +813,264 @@ void cv::minMaxLoc( InputArray _img, double* minVal, double* maxVal,
 namespace cv
 {
 
+float normL2Sqr_(const float* a, const float* b, int n)
+{
+    int j = 0; float d = 0.f;
+#if CV_SSE
+    if( USE_SSE2 )
+    {
+        float CV_DECL_ALIGNED(16) buf[4];
+        __m128 d0 = _mm_setzero_ps(), d1 = _mm_setzero_ps();
+        
+        for( ; j <= n - 8; j += 8 )
+        {
+            __m128 t0 = _mm_sub_ps(_mm_loadu_ps(a + j), _mm_loadu_ps(b + j));
+            __m128 t1 = _mm_sub_ps(_mm_loadu_ps(a + j + 4), _mm_loadu_ps(b + j + 4));
+            d0 = _mm_add_ps(d0, _mm_mul_ps(t0, t0));
+            d1 = _mm_add_ps(d1, _mm_mul_ps(t1, t1));
+        }
+        _mm_store_ps(buf, _mm_add_ps(d0, d1));
+        d = buf[0] + buf[1] + buf[2] + buf[3];
+    }
+    else
+#endif
+	{
+        for( ; j <= n - 4; j += 4 )
+        {
+            float t0 = a[j] - b[j], t1 = a[j+1] - b[j+1], t2 = a[j+2] - b[j+2], t3 = a[j+3] - b[j+3];
+            d += t0*t0 + t1*t1 + t2*t2 + t3*t3;
+        }
+    }
+ 
+    for( ; j < n; j++ )
+    {
+        float t = a[j] - b[j];
+        d += t*t;
+    }
+    return d;
+}
+
+
+float normL1_(const float* a, const float* b, int n)
+{
+    int j = 0; float d = 0.f;
+#if CV_SSE
+    if( USE_SSE2 )
+    {
+        float CV_DECL_ALIGNED(16) buf[4];
+        static const int CV_DECL_ALIGNED(16) absbuf[4] = {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff};
+        __m128 d0 = _mm_setzero_ps(), d1 = _mm_setzero_ps();
+        __m128 absmask = _mm_load_ps((const float*)absbuf);
+        
+        for( ; j <= n - 8; j += 8 )
+        {
+            __m128 t0 = _mm_sub_ps(_mm_loadu_ps(a + j), _mm_loadu_ps(b + j));
+            __m128 t1 = _mm_sub_ps(_mm_loadu_ps(a + j + 4), _mm_loadu_ps(b + j + 4));
+            d0 = _mm_add_ps(d0, _mm_and_ps(t0, absmask));
+            d1 = _mm_add_ps(d1, _mm_and_ps(t1, absmask));
+        }
+        _mm_store_ps(buf, _mm_add_ps(d0, d1));
+        d = buf[0] + buf[1] + buf[2] + buf[3];
+    }
+    else
+#endif
+    {
+        for( ; j <= n - 4; j += 4 )
+        {
+            d += std::abs(a[j] - b[j]) + std::abs(a[j+1] - b[j+1]) +
+                    std::abs(a[j+2] - b[j+2]) + std::abs(a[j+3] - b[j+3]);
+        }
+    }
+
+    for( ; j < n; j++ )
+        d += std::abs(a[j] - b[j]);
+    return d;
+}
+
+int normL1_(const uchar* a, const uchar* b, int n)
+{
+    int j = 0, d = 0;
+#if CV_SSE
+    if( USE_SSE2 )
+    {
+        __m128i d0 = _mm_setzero_si128();
+        
+        for( ; j <= n - 16; j += 16 )
+        {
+            __m128i t0 = _mm_loadu_si128((const __m128i*)(a + j));
+            __m128i t1 = _mm_loadu_si128((const __m128i*)(b + j));
+            
+            d0 = _mm_add_epi32(d0, _mm_sad_epu8(t0, t1));
+        }
+
+        for( ; j <= n - 4; j += 4 )
+        {
+            __m128i t0 = _mm_cvtsi32_si128(*(const int*)(a + j));
+            __m128i t1 = _mm_cvtsi32_si128(*(const int*)(b + j));
+            
+            d0 = _mm_add_epi32(d0, _mm_sad_epu8(t0, t1));
+        }
+        d = _mm_cvtsi128_si32(_mm_add_epi32(d0, _mm_unpackhi_epi64(d0, d0)));
+    }
+    else
+#endif
+    {
+        for( ; j <= n - 4; j += 4 )
+        {
+            d += std::abs(a[j] - b[j]) + std::abs(a[j+1] - b[j+1]) +
+                    std::abs(a[j+2] - b[j+2]) + std::abs(a[j+3] - b[j+3]);
+        }
+    }
+    for( ; j < n; j++ )
+        d += std::abs(a[j] - b[j]);
+    return d;
+}
+
+static const uchar popCountTable[] = 
+{
+    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8
+};
+
+static const uchar popCountTable2[] =
+{
+    0, 1, 1, 1, 1, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 2, 3, 3, 3,
+    1, 2, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 2, 3, 3, 3, 1, 2, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 2, 3, 3, 3,
+    1, 2, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 2, 3, 3, 3, 2, 3, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4,
+    2, 3, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4, 2, 3, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4,
+    1, 2, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 2, 3, 3, 3, 2, 3, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4,
+    2, 3, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4, 2, 3, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4,
+    1, 2, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 2, 3, 3, 3, 2, 3, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4,
+    2, 3, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4, 2, 3, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4
+};
+
+static const uchar popCountTable4[] =
+{
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+};
+
+int normHamming(const uchar* a, int n)
+{
+    int i = 0, result = 0;
+#if CV_NEON
+    if (CPU_HAS_NEON_FEATURE)
+    {
+        uint32x4_t bits = vmovq_n_u32(0);
+        for (; i <= n - 16; i += 16) {
+            uint8x16_t A_vec = vld1q_u8 (a + i);
+            uint8x16_t bitsSet = vcntq_u8 (A_vec);
+            uint16x8_t bitSet8 = vpaddlq_u8 (bitsSet);
+            uint32x4_t bitSet4 = vpaddlq_u16 (bitSet8);
+            bits = vaddq_u32(bits, bitSet4);
+        }
+        uint64x2_t bitSet2 = vpaddlq_u32 (bits);
+        result = vgetq_lane_s32 (vreinterpretq_s32_u64(bitSet2),0);
+        result += vgetq_lane_s32 (vreinterpretq_s32_u64(bitSet2),2);
+    }
+    else
+#endif
+        for( ; i <= n - 4; i += 4 )
+            result += popCountTable[a[i]] + popCountTable[a[i+1]] +
+            popCountTable[a[i+2]] + popCountTable[a[i+3]];
+    for( ; i < n; i++ )
+        result += popCountTable[a[i]];
+    return result;
+}
+    
+int normHamming(const uchar* a, const uchar* b, int n)
+{
+    int i = 0, result = 0;
+#if CV_NEON
+    if (CPU_HAS_NEON_FEATURE)
+    {
+        uint32x4_t bits = vmovq_n_u32(0);
+        for (; i <= n - 16; i += 16) {
+            uint8x16_t A_vec = vld1q_u8 (a + i);
+            uint8x16_t B_vec = vld1q_u8 (b + i);
+            uint8x16_t AxorB = veorq_u8 (A_vec, B_vec);
+            uint8x16_t bitsSet = vcntq_u8 (AxorB);
+            uint16x8_t bitSet8 = vpaddlq_u8 (bitsSet);
+            uint32x4_t bitSet4 = vpaddlq_u16 (bitSet8);
+            bits = vaddq_u32(bits, bitSet4);
+        }
+        uint64x2_t bitSet2 = vpaddlq_u32 (bits);
+        result = vgetq_lane_s32 (vreinterpretq_s32_u64(bitSet2),0);
+        result += vgetq_lane_s32 (vreinterpretq_s32_u64(bitSet2),2);
+    }
+    else
+#endif
+        for( ; i <= n - 4; i += 4 )
+            result += popCountTable[a[i] ^ b[i]] + popCountTable[a[i+1] ^ b[i+1]] +
+                    popCountTable[a[i+2] ^ b[i+2]] + popCountTable[a[i+3] ^ b[i+3]];
+    for( ; i < n; i++ )
+        result += popCountTable[a[i] ^ b[i]];
+    return result;
+}
+
+int normHamming(const uchar* a, int n, int cellSize)
+{
+    if( cellSize == 1 )
+        return normHamming(a, n);
+    const uchar* tab = 0;
+    if( cellSize == 2 )
+        tab = popCountTable2;
+    else if( cellSize == 4 )
+        tab = popCountTable4;
+    else
+        CV_Error( CV_StsBadSize, "bad cell size (not 1, 2 or 4) in normHamming" );
+    int i = 0, result = 0;
+#if CV_ENABLE_UNROLLED
+    for( ; i <= n - 4; i += 4 )
+        result += tab[a[i]] + tab[a[i+1]] + tab[a[i+2]] + tab[a[i+3]];
+#endif
+    for( ; i < n; i++ )
+        result += tab[a[i]];
+    return result;
+}    
+    
+int normHamming(const uchar* a, const uchar* b, int n, int cellSize)
+{
+    if( cellSize == 1 )
+        return normHamming(a, b, n);
+    const uchar* tab = 0;
+    if( cellSize == 2 )
+        tab = popCountTable2;
+    else if( cellSize == 4 )
+        tab = popCountTable4;
+    else
+        CV_Error( CV_StsBadSize, "bad cell size (not 1, 2 or 4) in normHamming" );
+    int i = 0, result = 0;
+	#if CV_ENABLE_UNROLLED
+    for( ; i <= n - 4; i += 4 )
+        result += tab[a[i] ^ b[i]] + tab[a[i+1] ^ b[i+1]] +
+                tab[a[i+2] ^ b[i+2]] + tab[a[i+3] ^ b[i+3]];
+    #endif
+    for( ; i < n; i++ )
+        result += tab[a[i] ^ b[i]];
+    return result;
+}
+
+
 template<typename T, typename ST> int
 normInf_(const T* src, const uchar* mask, ST* _result, int len, int cn)
 {
     ST result = *_result;
     if( !mask )
     {
-        len *= cn;
-        for( int i = 0; i < len; i++ )
-            result = std::max(result, ST(std::abs(src[i])));
+        result = std::max(result, normInf<T, ST>(src, len*cn));
     }
     else
     {
@@ -817,22 +1078,20 @@ normInf_(const T* src, const uchar* mask, ST* _result, int len, int cn)
             if( mask[i] )
             {
                 for( int k = 0; k < cn; k++ )
-                    result = std::max(result, ST(std::abs(src[k])));
+                    result = std::max(result, ST(fast_abs(src[k])));
             }
     }
     *_result = result;
     return 0;
 }
-    
+
 template<typename T, typename ST> int
 normL1_(const T* src, const uchar* mask, ST* _result, int len, int cn)
 {
     ST result = *_result;
     if( !mask )
     {
-        len *= cn;
-        for( int i = 0; i < len; i++ )
-            result += std::abs(src[i]);
+        result += normL1<T, ST>(src, len*cn);
     }
     else
     {
@@ -840,7 +1099,7 @@ normL1_(const T* src, const uchar* mask, ST* _result, int len, int cn)
             if( mask[i] )
             {
                 for( int k = 0; k < cn; k++ )
-                    result += std::abs(src[k]);
+                    result += fast_abs(src[k]);
             }
     }
     *_result = result;
@@ -853,12 +1112,7 @@ normL2_(const T* src, const uchar* mask, ST* _result, int len, int cn)
     ST result = *_result;
     if( !mask )
     {
-        len *= cn;
-        for( int i = 0; i < len; i++ )
-        {
-            T v = src[i];
-            result += (ST)v*v;
-        }
+        result += normL2Sqr<T, ST>(src, len*cn);
     }
     else
     {
@@ -875,16 +1129,14 @@ normL2_(const T* src, const uchar* mask, ST* _result, int len, int cn)
     *_result = result;
     return 0;
 }    
-    
+
 template<typename T, typename ST> int
 normDiffInf_(const T* src1, const T* src2, const uchar* mask, ST* _result, int len, int cn)
 {
     ST result = *_result;
     if( !mask )
     {
-        len *= cn;
-        for( int i = 0; i < len; i++ )
-            result = std::max(result, (ST)std::abs(src1[i] - src2[i]));
+        result = std::max(result, normInf<T, ST>(src1, src2, len*cn));
     }
     else
     {
@@ -905,9 +1157,7 @@ normDiffL1_(const T* src1, const T* src2, const uchar* mask, ST* _result, int le
     ST result = *_result;
     if( !mask )
     {
-        len *= cn;
-        for( int i = 0; i < len; i++ )
-            result += std::abs(src1[i] - src2[i]);
+        result += normL1<T, ST>(src1, src2, len*cn);
     }
     else
     {
@@ -928,12 +1178,7 @@ normDiffL2_(const T* src1, const T* src2, const uchar* mask, ST* _result, int le
     ST result = *_result;
     if( !mask )
     {
-        len *= cn;
-        for( int i = 0; i < len; i++ )
-        {
-            ST v = src1[i] - src2[i];
-            result += v*v;
-        }
+        result += normL2Sqr<T, ST>(src1, src2, len*cn);
     }
     else
     {
@@ -953,16 +1198,16 @@ normDiffL2_(const T* src1, const T* src2, const uchar* mask, ST* _result, int le
 
 
 #define CV_DEF_NORM_FUNC(L, suffix, type, ntype) \
-static int norm##L##_##suffix(const type* src, const uchar* mask, ntype* r, int len, int cn) \
+    static int norm##L##_##suffix(const type* src, const uchar* mask, ntype* r, int len, int cn) \
 { return norm##L##_(src, mask, r, len, cn); } \
-static int normDiff##L##_##suffix(const type* src1, const type* src2, \
-                               const uchar* mask, ntype* r, int len, int cn) \
+    static int normDiff##L##_##suffix(const type* src1, const type* src2, \
+    const uchar* mask, ntype* r, int len, int cn) \
 { return normDiff##L##_(src1, src2, mask, r, (int)len, cn); }
-    
+
 #define CV_DEF_NORM_ALL(suffix, type, inftype, l1type, l2type) \
-CV_DEF_NORM_FUNC(Inf, suffix, type, inftype) \
-CV_DEF_NORM_FUNC(L1, suffix, type, l1type) \
-CV_DEF_NORM_FUNC(L2, suffix, type, l2type)
+    CV_DEF_NORM_FUNC(Inf, suffix, type, inftype) \
+    CV_DEF_NORM_FUNC(L1, suffix, type, l1type) \
+    CV_DEF_NORM_FUNC(L2, suffix, type, l2type)
 
 CV_DEF_NORM_ALL(8u, uchar, int, int, int)
 CV_DEF_NORM_ALL(8s, schar, int, int, int)
@@ -972,86 +1217,129 @@ CV_DEF_NORM_ALL(32s, int, int, double, double)
 CV_DEF_NORM_ALL(32f, float, float, double, double)
 CV_DEF_NORM_ALL(64f, double, double, double, double)
 
-    
+
 typedef int (*NormFunc)(const uchar*, const uchar*, uchar*, int, int);
 typedef int (*NormDiffFunc)(const uchar*, const uchar*, const uchar*, uchar*, int, int);    
 
 static NormFunc normTab[3][8] =
 {
     {
-        (NormFunc)normInf_8u, (NormFunc)normInf_8s, (NormFunc)normInf_16u, (NormFunc)normInf_16s,
-        (NormFunc)normInf_32s, (NormFunc)normInf_32f, (NormFunc)normInf_64f, 0
+        (NormFunc)GET_OPTIMIZED(normInf_8u), (NormFunc)GET_OPTIMIZED(normInf_8s), (NormFunc)GET_OPTIMIZED(normInf_16u), (NormFunc)GET_OPTIMIZED(normInf_16s),
+        (NormFunc)GET_OPTIMIZED(normInf_32s), (NormFunc)GET_OPTIMIZED(normInf_32f), (NormFunc)normInf_64f, 0
     },
     {
-        (NormFunc)normL1_8u, (NormFunc)normL1_8s, (NormFunc)normL1_16u, (NormFunc)normL1_16s,
-        (NormFunc)normL1_32s, (NormFunc)normL1_32f, (NormFunc)normL1_64f, 0
+        (NormFunc)GET_OPTIMIZED(normL1_8u), (NormFunc)GET_OPTIMIZED(normL1_8s), (NormFunc)GET_OPTIMIZED(normL1_16u), (NormFunc)GET_OPTIMIZED(normL1_16s),
+        (NormFunc)GET_OPTIMIZED(normL1_32s), (NormFunc)GET_OPTIMIZED(normL1_32f), (NormFunc)normL1_64f, 0
     },
     {
-        (NormFunc)normL2_8u, (NormFunc)normL2_8s, (NormFunc)normL2_16u, (NormFunc)normL2_16s,
-        (NormFunc)normL2_32s, (NormFunc)normL2_32f, (NormFunc)normL2_64f, 0
+        (NormFunc)GET_OPTIMIZED(normL2_8u), (NormFunc)GET_OPTIMIZED(normL2_8s), (NormFunc)GET_OPTIMIZED(normL2_16u), (NormFunc)GET_OPTIMIZED(normL2_16s),
+        (NormFunc)GET_OPTIMIZED(normL2_32s), (NormFunc)GET_OPTIMIZED(normL2_32f), (NormFunc)normL2_64f, 0
     }
 };
 
 static NormDiffFunc normDiffTab[3][8] =
 {
     {
-        (NormDiffFunc)normDiffInf_8u, (NormDiffFunc)normDiffInf_8s,
+        (NormDiffFunc)GET_OPTIMIZED(normDiffInf_8u), (NormDiffFunc)normDiffInf_8s,
         (NormDiffFunc)normDiffInf_16u, (NormDiffFunc)normDiffInf_16s,
-        (NormDiffFunc)normDiffInf_32s, (NormDiffFunc)normDiffInf_32f,
+        (NormDiffFunc)normDiffInf_32s, (NormDiffFunc)GET_OPTIMIZED(normDiffInf_32f),
         (NormDiffFunc)normDiffInf_64f, 0
     },
     {
-        (NormDiffFunc)normDiffL1_8u, (NormDiffFunc)normDiffL1_8s,
+        (NormDiffFunc)GET_OPTIMIZED(normDiffL1_8u), (NormDiffFunc)normDiffL1_8s,
         (NormDiffFunc)normDiffL1_16u, (NormDiffFunc)normDiffL1_16s,
-        (NormDiffFunc)normDiffL1_32s, (NormDiffFunc)normDiffL1_32f,
+        (NormDiffFunc)normDiffL1_32s, (NormDiffFunc)GET_OPTIMIZED(normDiffL1_32f),
         (NormDiffFunc)normDiffL1_64f, 0
     },
     {
-        (NormDiffFunc)normDiffL2_8u, (NormDiffFunc)normDiffL2_8s,
+        (NormDiffFunc)GET_OPTIMIZED(normDiffL2_8u), (NormDiffFunc)normDiffL2_8s,
         (NormDiffFunc)normDiffL2_16u, (NormDiffFunc)normDiffL2_16s,
-        (NormDiffFunc)normDiffL2_32s, (NormDiffFunc)normDiffL2_32f,
+        (NormDiffFunc)normDiffL2_32s, (NormDiffFunc)GET_OPTIMIZED(normDiffL2_32f),
         (NormDiffFunc)normDiffL2_64f, 0
     }
 };
 
 }
-    
+
 double cv::norm( InputArray _src, int normType, InputArray _mask )
 {
     Mat src = _src.getMat(), mask = _mask.getMat();
     int depth = src.depth(), cn = src.channels();
     
     normType &= 7;
-    CV_Assert( normType == NORM_INF || normType == NORM_L1 || normType == NORM_L2 );
+    CV_Assert( normType == NORM_INF || normType == NORM_L1 || normType == NORM_L2 || normType == NORM_L2SQR ||
+               ((normType == NORM_HAMMING || normType == NORM_HAMMING2) && src.type() == CV_8U) );
     
-    if( depth == CV_32F && src.isContinuous() && mask.empty() )
+    if( src.isContinuous() && mask.empty() )
     {
         size_t len = src.total()*cn;
         if( len == (size_t)(int)len )
         {
-            const float* data = src.ptr<float>();
-            
-            if( normType == NORM_L2 )
+            if( depth == CV_32F )
             {
-                double result = 0;
-                normL2_32f(data, 0, &result, (int)len, 1);
-                return std::sqrt(result);
+                const float* data = src.ptr<float>();
+                
+                if( normType == NORM_L2 )
+                {
+                    double result = 0;
+                    GET_OPTIMIZED(normL2_32f)(data, 0, &result, (int)len, 1);
+                    return std::sqrt(result);
+                }
+                if( normType == NORM_L2SQR )
+                {
+                    double result = 0;
+                    GET_OPTIMIZED(normL2_32f)(data, 0, &result, (int)len, 1);
+                    return result;
+                }
+                if( normType == NORM_L1 )
+                {
+                    double result = 0;
+                    GET_OPTIMIZED(normL1_32f)(data, 0, &result, (int)len, 1);
+                    return result;
+                }
+                if( normType == NORM_INF )
+                {
+                    float result = 0;
+                    GET_OPTIMIZED(normInf_32f)(data, 0, &result, (int)len, 1);
+                    return result;
+                }
             }
-            if( normType == NORM_L1 )
+            if( depth == CV_8U )
             {
-                double result = 0;
-                normL1_32f(data, 0, &result, (int)len, 1);
-                return result;
-            }
-            {
-                float result = 0;
-                normInf_32f(data, 0, &result, (int)len, 1);
-                return result;
+                const uchar* data = src.ptr<uchar>();
+                
+                if( normType == NORM_HAMMING )
+                    return normHamming(data, (int)len);
+                
+                if( normType == NORM_HAMMING2 )
+                    return normHamming(data, (int)len, 2);
             }
         }
     }
     
     CV_Assert( mask.empty() || mask.type() == CV_8U );
+    
+    if( normType == NORM_HAMMING || normType == NORM_HAMMING2 )
+    {
+        if( !mask.empty() )
+        {
+            Mat temp;
+            bitwise_and(src, mask, temp);
+            return norm(temp, normType);
+        }
+        int cellSize = normType == NORM_HAMMING ? 1 : 2;
+        
+        const Mat* arrays[] = {&src, 0};
+        uchar* ptrs[1];
+        NAryMatIterator it(arrays, ptrs);
+        int total = (int)it.size;
+        int result = 0;
+        
+        for( size_t i = 0; i < it.nplanes; i++, ++it )
+            result += normHamming(ptrs[0], total, cellSize);
+        
+        return result;
+    }
     
     NormFunc func = normTab[normType >> 1][depth];
     CV_Assert( func != 0 );
@@ -1069,7 +1357,7 @@ double cv::norm( InputArray _src, int normType, InputArray _mask )
     NAryMatIterator it(arrays, ptrs);
     int j, total = (int)it.size, blockSize = total, intSumBlockSize = 0, count = 0;
     bool blockSum = (normType == NORM_L1 && depth <= CV_16S) ||
-                    (normType == NORM_L2 && depth <= CV_8S);
+            ((normType == NORM_L2 || normType == NORM_L2SQR) && depth <= CV_8S);
     int isum = 0;
     int *ibuf = &result.i;
     size_t esz = 0;
@@ -1116,7 +1404,7 @@ double cv::norm( InputArray _src, int normType, InputArray _mask )
     return result.d;
 }
 
-    
+
 double cv::norm( InputArray _src1, InputArray _src2, int normType, InputArray _mask )
 {
     if( normType & CV_RELATIVE )
@@ -1128,37 +1416,71 @@ double cv::norm( InputArray _src1, InputArray _src2, int normType, InputArray _m
     CV_Assert( src1.size == src2.size && src1.type() == src2.type() );
     
     normType &= 7;
-    CV_Assert( normType == NORM_INF || normType == NORM_L1 || normType == NORM_L2 );
+    CV_Assert( normType == NORM_INF || normType == NORM_L1 || normType == NORM_L2 || normType == NORM_L2SQR ||
+              ((normType == NORM_HAMMING || normType == NORM_HAMMING2) && src1.type() == CV_8U) );
     
-    if( src1.depth() == CV_32F && src1.isContinuous() && src2.isContinuous() && mask.empty() )
+    if( src1.isContinuous() && src2.isContinuous() && mask.empty() )
     {
         size_t len = src1.total()*src1.channels();
         if( len == (size_t)(int)len )
         {
-            const float* data1 = src1.ptr<float>();
-            const float* data2 = src2.ptr<float>();
-            
-            if( normType == NORM_L2 )
+            if( src1.depth() == CV_32F )
             {
-                double result = 0;
-                normDiffL2_32f(data1, data2, 0, &result, (int)len, 1);
-                return std::sqrt(result);
-            }
-            if( normType == NORM_L1 )
-            {
-                double result = 0;
-                normDiffL1_32f(data1, data2, 0, &result, (int)len, 1);
-                return result;
-            }
-            {
-                float result = 0;
-                normDiffInf_32f(data1, data2, 0, &result, (int)len, 1);
-                return result;
+                const float* data1 = src1.ptr<float>();
+                const float* data2 = src2.ptr<float>();
+                
+                if( normType == NORM_L2 )
+                {
+                    double result = 0;
+                    GET_OPTIMIZED(normDiffL2_32f)(data1, data2, 0, &result, (int)len, 1);
+                    return std::sqrt(result);
+                }
+                if( normType == NORM_L2SQR )
+                {
+                    double result = 0;
+                    GET_OPTIMIZED(normDiffL2_32f)(data1, data2, 0, &result, (int)len, 1);
+                    return result;
+                }
+                if( normType == NORM_L1 )
+                {
+                    double result = 0;
+                    GET_OPTIMIZED(normDiffL1_32f)(data1, data2, 0, &result, (int)len, 1);
+                    return result;
+                }
+                if( normType == NORM_INF )
+                {
+                    float result = 0;
+                    GET_OPTIMIZED(normDiffInf_32f)(data1, data2, 0, &result, (int)len, 1);
+                    return result;
+                }
             }
         }
     }
     
     CV_Assert( mask.empty() || mask.type() == CV_8U );
+    
+    if( normType == NORM_HAMMING || normType == NORM_HAMMING2 )
+    {
+        if( !mask.empty() )
+        {
+            Mat temp;
+            bitwise_xor(src1, src2, temp);
+            bitwise_and(temp, mask, temp);
+            return norm(temp, normType);
+        }
+        int cellSize = normType == NORM_HAMMING ? 1 : 2;
+        
+        const Mat* arrays[] = {&src1, &src2, 0};
+        uchar* ptrs[2];
+        NAryMatIterator it(arrays, ptrs);
+        int total = (int)it.size;
+        int result = 0;
+        
+        for( size_t i = 0; i < it.nplanes; i++, ++it )
+            result += normHamming(ptrs[0], ptrs[1], total, cellSize);
+        
+        return result;
+    }
     
     NormDiffFunc func = normDiffTab[normType >> 1][depth];
     CV_Assert( func != 0 );
@@ -1177,7 +1499,7 @@ double cv::norm( InputArray _src1, InputArray _src2, int normType, InputArray _m
     NAryMatIterator it(arrays, ptrs);
     int j, total = (int)it.size, blockSize = total, intSumBlockSize = 0, count = 0;
     bool blockSum = (normType == NORM_L1 && depth <= CV_16S) ||
-    (normType == NORM_L2 && depth <= CV_8S);
+            ((normType == NORM_L2 || normType == NORM_L2SQR) && depth <= CV_8S);
     unsigned isum = 0;
     unsigned *ibuf = &result.u;
     size_t esz = 0;
@@ -1223,6 +1545,329 @@ double cv::norm( InputArray _src1, InputArray _src2, int normType, InputArray _m
         result.d = std::sqrt(result.d);
     
     return result.d;
+}
+
+
+///////////////////////////////////// batch distance ///////////////////////////////////////
+
+namespace cv
+{
+
+template<typename _Tp, typename _Rt>
+void batchDistL1_(const _Tp* src1, const _Tp* src2, size_t step2,
+                  int nvecs, int len, _Rt* dist, const uchar* mask)
+{
+    step2 /= sizeof(src2[0]);
+    if( !mask )
+    {
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = normL1<_Tp, _Rt>(src1, src2 + step2*i, len);
+    }
+    else
+    {
+        _Rt val0 = std::numeric_limits<_Rt>::max();
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = mask[i] ? normL1<_Tp, _Rt>(src1, src2 + step2*i, len) : val0;
+    }
+}
+
+template<typename _Tp, typename _Rt>
+void batchDistL2Sqr_(const _Tp* src1, const _Tp* src2, size_t step2,
+                     int nvecs, int len, _Rt* dist, const uchar* mask)
+{
+    step2 /= sizeof(src2[0]);
+    if( !mask )
+    {
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = normL2Sqr<_Tp, _Rt>(src1, src2 + step2*i, len);
+    }
+    else
+    {
+        _Rt val0 = std::numeric_limits<_Rt>::max();
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = mask[i] ? normL2Sqr<_Tp, _Rt>(src1, src2 + step2*i, len) : val0;
+    }
+}
+
+template<typename _Tp, typename _Rt>
+void batchDistL2_(const _Tp* src1, const _Tp* src2, size_t step2,
+                  int nvecs, int len, _Rt* dist, const uchar* mask)
+{
+    step2 /= sizeof(src2[0]);
+    if( !mask )
+    {
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = std::sqrt(normL2Sqr<_Tp, _Rt>(src1, src2 + step2*i, len));
+    }
+    else
+    {
+        _Rt val0 = std::numeric_limits<_Rt>::max();
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = mask[i] ? std::sqrt(normL2Sqr<_Tp, _Rt>(src1, src2 + step2*i, len)) : val0;
+    }
+}
+
+static void batchDistHamming(const uchar* src1, const uchar* src2, size_t step2,
+                             int nvecs, int len, int* dist, const uchar* mask)
+{
+    step2 /= sizeof(src2[0]);
+    if( !mask )
+    {
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = normHamming(src1, src2 + step2*i, len);
+    }
+    else
+    {
+        int val0 = INT_MAX;
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = mask[i] ? normHamming(src1, src2 + step2*i, len) : val0;
+    }
+}
+
+static void batchDistHamming2(const uchar* src1, const uchar* src2, size_t step2,
+                              int nvecs, int len, int* dist, const uchar* mask)
+{
+    step2 /= sizeof(src2[0]);
+    if( !mask )
+    {
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = normHamming(src1, src2 + step2*i, len, 2);
+    }
+    else
+    {
+        int val0 = INT_MAX;
+        for( int i = 0; i < nvecs; i++ )
+            dist[i] = mask[i] ? normHamming(src1, src2 + step2*i, len, 2) : val0;
+    }
+}
+
+static void batchDistL1_8u32s(const uchar* src1, const uchar* src2, size_t step2,
+                               int nvecs, int len, int* dist, const uchar* mask)
+{
+    batchDistL1_<uchar, int>(src1, src2, step2, nvecs, len, dist, mask);
+}
+
+static void batchDistL1_8u32f(const uchar* src1, const uchar* src2, size_t step2,
+                               int nvecs, int len, float* dist, const uchar* mask)
+{
+    batchDistL1_<uchar, float>(src1, src2, step2, nvecs, len, dist, mask);
+}
+
+static void batchDistL2Sqr_8u32s(const uchar* src1, const uchar* src2, size_t step2,
+                                  int nvecs, int len, int* dist, const uchar* mask)
+{
+    batchDistL2Sqr_<uchar, int>(src1, src2, step2, nvecs, len, dist, mask);
+}
+
+static void batchDistL2Sqr_8u32f(const uchar* src1, const uchar* src2, size_t step2,
+                                  int nvecs, int len, float* dist, const uchar* mask)
+{
+    batchDistL2Sqr_<uchar, float>(src1, src2, step2, nvecs, len, dist, mask);
+}
+
+static void batchDistL2_8u32f(const uchar* src1, const uchar* src2, size_t step2,
+                               int nvecs, int len, float* dist, const uchar* mask)
+{
+    batchDistL2_<uchar, float>(src1, src2, step2, nvecs, len, dist, mask);
+}
+
+static void batchDistL1_32f(const float* src1, const float* src2, size_t step2,
+                             int nvecs, int len, float* dist, const uchar* mask)
+{
+    batchDistL1_<float, float>(src1, src2, step2, nvecs, len, dist, mask);
+}
+
+static void batchDistL2Sqr_32f(const float* src1, const float* src2, size_t step2,
+                                int nvecs, int len, float* dist, const uchar* mask)
+{
+    batchDistL2Sqr_<float, float>(src1, src2, step2, nvecs, len, dist, mask);
+}
+
+static void batchDistL2_32f(const float* src1, const float* src2, size_t step2,
+                             int nvecs, int len, float* dist, const uchar* mask)
+{
+    batchDistL2_<float, float>(src1, src2, step2, nvecs, len, dist, mask);
+}
+
+typedef void (*BatchDistFunc)(const uchar* src1, const uchar* src2, size_t step2,
+                              int nvecs, int len, uchar* dist, const uchar* mask);
+
+    
+struct BatchDistInvoker
+{
+    BatchDistInvoker( const Mat& _src1, const Mat& _src2,
+                      Mat& _dist, Mat& _nidx, int _K,
+                      const Mat& _mask, int _update,
+                      BatchDistFunc _func)
+    {
+        src1 = &_src1;
+        src2 = &_src2;
+        dist = &_dist;
+        nidx = &_nidx;
+        K = _K;
+        mask = &_mask;
+        update = _update;
+        func = _func;
+    }
+    
+    void operator()(const BlockedRange& range) const
+    {
+        AutoBuffer<int> buf(src2->rows);
+        int* bufptr = buf;
+        
+        for( int i = range.begin(); i < range.end(); i++ )
+        {
+            func(src1->ptr(i), src2->ptr(), src2->step, src2->rows, src2->cols,
+                 K > 0 ? (uchar*)bufptr : dist->ptr(i), mask->data ? mask->ptr(i) : 0);
+            
+            if( K > 0 )
+            {
+                int* nidxptr = nidx->ptr<int>(i);
+                // since positive float's can be compared just like int's,
+                // we handle both CV_32S and CV_32F cases with a single branch
+                int* distptr = (int*)dist->ptr(i);
+                
+                int j, k;
+                
+                for( j = 0; j < src2->rows; j++ )
+                {
+                    int d = bufptr[j];
+                    if( d < distptr[K-1] )
+                    {
+                        for( k = K-2; k >= 0 && distptr[k] > d; k-- )
+                        {
+                            nidxptr[k+1] = nidxptr[k];
+                            distptr[k+1] = distptr[k];
+                        }
+                        nidxptr[k+1] = j + update;
+                        distptr[k+1] = d;
+                    }
+                }
+            }
+        }
+    }
+    
+    const Mat *src1;
+    const Mat *src2;
+    Mat *dist;
+    Mat *nidx;
+    const Mat *mask;
+    int K;
+    int update;
+    BatchDistFunc func;
+};
+    
+}
+    
+void cv::batchDistance( InputArray _src1, InputArray _src2,
+                        OutputArray _dist, int dtype, OutputArray _nidx,
+                        int normType, int K, InputArray _mask,
+                        int update, bool crosscheck )
+{
+    Mat src1 = _src1.getMat(), src2 = _src2.getMat(), mask = _mask.getMat();
+    int type = src1.type();
+    CV_Assert( type == src2.type() && src1.cols == src2.cols &&
+               (type == CV_32F || type == CV_8U));
+    CV_Assert( _nidx.needed() == (K > 0) );
+    
+    if( dtype == -1 )
+    {
+        dtype = normType == NORM_HAMMING || normType == NORM_HAMMING2 ? CV_32S : CV_32F;
+    }
+    CV_Assert( (type == CV_8U && dtype == CV_32S) || dtype == CV_32F);
+
+    K = std::min(K, src2.rows);
+    
+    _dist.create(src1.rows, (K > 0 ? K : src2.rows), dtype);
+    Mat dist = _dist.getMat(), nidx;
+    if( _nidx.needed() )
+    {
+        _nidx.create(dist.size(), CV_32S);
+        nidx = _nidx.getMat();
+    }
+    
+    if( update == 0 && K > 0 )
+    {
+        dist = Scalar::all(dtype == CV_32S ? (double)INT_MAX : (double)FLT_MAX);
+        nidx = Scalar::all(-1);
+    }
+    
+    if( crosscheck )
+    {
+        CV_Assert( K == 1 && update == 0 && mask.empty() );
+        Mat tdist, tidx;
+        batchDistance(src2, src1, tdist, dtype, tidx, normType, K, mask, 0, false);
+        
+        // if an idx-th element from src1 appeared to be the nearest to i-th element of src2,
+        // we update the minimum mutual distance between idx-th element of src1 and the whole src2 set.
+        // As a result, if nidx[idx] = i*, it means that idx-th element of src1 is the nearest
+        // to i*-th element of src2 and i*-th element of src2 is the closest to idx-th element of src1.
+        // If nidx[idx] = -1, it means that there is no such ideal couple for it in src2.
+        // This O(N) procedure is called cross-check and it helps to eliminate some false matches.
+        if( dtype == CV_32S )
+        {
+            for( int i = 0; i < tdist.rows; i++ )
+            {
+                int idx = tidx.at<int>(i);
+                int d = tdist.at<int>(i), d0 = dist.at<int>(idx);
+                if( d < d0 )
+                {
+                    dist.at<int>(idx) = d0;
+                    nidx.at<int>(idx) = i + update;
+                }
+            }
+        }
+        else
+        {
+            for( int i = 0; i < tdist.rows; i++ )
+            {
+                int idx = tidx.at<int>(i);
+                float d = tdist.at<float>(i), d0 = dist.at<float>(idx);
+                if( d < d0 )
+                {
+                    dist.at<float>(idx) = d0;
+                    nidx.at<int>(idx) = i + update;
+                }
+            }
+        }
+        return;
+    }
+    
+    BatchDistFunc func = 0;
+    if( type == CV_8U )
+    {
+        if( normType == NORM_L1 && dtype == CV_32S )
+            func = (BatchDistFunc)batchDistL1_8u32s;
+        else if( normType == NORM_L1 && dtype == CV_32F )
+            func = (BatchDistFunc)batchDistL1_8u32f;
+        else if( normType == NORM_L2SQR && dtype == CV_32S )
+            func = (BatchDistFunc)batchDistL2Sqr_8u32s;
+        else if( normType == NORM_L2SQR && dtype == CV_32F )
+            func = (BatchDistFunc)batchDistL2Sqr_8u32f;
+        else if( normType == NORM_L2 && dtype == CV_32F )
+            func = (BatchDistFunc)batchDistL2_8u32f;
+        else if( normType == NORM_HAMMING && dtype == CV_32S )
+            func = (BatchDistFunc)batchDistHamming;
+        else if( normType == NORM_HAMMING2 && dtype == CV_32S )
+            func = (BatchDistFunc)batchDistHamming2;
+    }
+    else if( type == CV_32F && dtype == CV_32F )
+    {
+        if( normType == NORM_L1 )
+            func = (BatchDistFunc)batchDistL1_32f;
+        else if( normType == NORM_L2SQR )
+            func = (BatchDistFunc)batchDistL2Sqr_32f;
+        else if( normType == NORM_L2 )
+            func = (BatchDistFunc)batchDistL2_32f;
+    }
+    
+    if( func == 0 )
+        CV_Error_(CV_StsUnsupportedFormat,
+                  ("The combination of type=%d, dtype=%d and normType=%d is not supported",
+                   type, dtype, normType));
+    
+    parallel_for(BlockedRange(0, src1.rows),
+                 BatchDistInvoker(src1, src2, dist, nidx, K, mask, update, func));
 }
 
 
@@ -1308,7 +1953,7 @@ cvMinMaxLoc( const void* imgarr, double* _minVal, double* _maxVal,
         cv::extractImageCOI(imgarr, img);
 
     cv::minMaxLoc( img, _minVal, _maxVal,
-        (cv::Point*)_minLoc, (cv::Point*)_maxLoc, mask );
+                   (cv::Point*)_minLoc, (cv::Point*)_maxLoc, mask );
 }
 
 

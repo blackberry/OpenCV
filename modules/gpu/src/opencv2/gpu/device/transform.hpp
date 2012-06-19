@@ -43,33 +43,24 @@
 #ifndef __OPENCV_GPU_TRANSFORM_HPP__
 #define __OPENCV_GPU_TRANSFORM_HPP__
 
-#include "detail/transform.hpp"
+#include "common.hpp"
+#include "utility.hpp"
+#include "detail/transform_detail.hpp"
 
-namespace cv { namespace gpu { namespace device
+namespace cv { namespace gpu { namespace device 
 {
-    template <typename T, typename D, typename UnOp>
-    static void transform(const DevMem2D_<T>& src, const DevMem2D_<D>& dst, const UnOp& op, cudaStream_t stream = 0)
+    template <typename T, typename D, typename UnOp, typename Mask>
+    static inline void transform(DevMem2D_<T> src, DevMem2D_<D> dst, UnOp op, Mask mask, cudaStream_t stream)
     {
-        detail::transform_caller(src, dst, op, detail::NoMask(), stream);
-    }
-    template <typename T, typename D, typename UnOp>
-    static void transform(const DevMem2D_<T>& src, const DevMem2D_<D>& dst, const PtrStep& mask, const UnOp& op, 
-        cudaStream_t stream = 0)
-    {
-        detail::transform_caller(src, dst, op, detail::MaskReader(mask), stream);
+        typedef TransformFunctorTraits<UnOp> ft;
+        transform_detail::TransformDispatcher<VecTraits<T>::cn == 1 && VecTraits<D>::cn == 1 && ft::smart_shift != 1>::call(src, dst, op, mask, stream);
     }
 
-    template <typename T1, typename T2, typename D, typename BinOp>
-    static void transform(const DevMem2D_<T1>& src1, const DevMem2D_<T2>& src2, const DevMem2D_<D>& dst, 
-        const BinOp& op, cudaStream_t stream = 0)
+    template <typename T1, typename T2, typename D, typename BinOp, typename Mask>
+    static inline void transform(DevMem2D_<T1> src1, DevMem2D_<T2> src2, DevMem2D_<D> dst, BinOp op, Mask mask, cudaStream_t stream)
     {
-        detail::transform_caller(src1, src2, dst, op, detail::NoMask(), stream);
-    }
-    template <typename T1, typename T2, typename D, typename BinOp>
-    static void transform(const DevMem2D_<T1>& src1, const DevMem2D_<T2>& src2, const DevMem2D_<D>& dst, 
-        const PtrStep& mask, const BinOp& op, cudaStream_t stream = 0)
-    {
-        detail::transform_caller(src1, src2, dst, op, detail::MaskReader(mask), stream);
+        typedef TransformFunctorTraits<BinOp> ft;
+        transform_detail::TransformDispatcher<VecTraits<T1>::cn == 1 && VecTraits<T2>::cn == 1 && VecTraits<D>::cn == 1 && ft::smart_shift != 1>::call(src1, src2, dst, op, mask, stream);
     }
 }}}
 

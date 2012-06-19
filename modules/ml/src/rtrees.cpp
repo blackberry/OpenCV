@@ -246,6 +246,10 @@ CvRTrees::~CvRTrees()
     clear();
 }
 
+std::string CvRTrees::getName() const
+{
+    return CV_TYPE_NAME_ML_RTREES;
+}
 
 CvMat* CvRTrees::get_active_var_mask()
 {
@@ -697,28 +701,18 @@ float CvRTrees::predict( const CvMat* sample, const CvMat* missing ) const
 
 float CvRTrees::predict_prob( const CvMat* sample, const CvMat* missing) const
 {
-    double result = -1;
-    int k;
-	
 	if( nclasses == 2 ) //classification
     {
-        int max_nvotes = 0;
         cv::AutoBuffer<int> _votes(nclasses);
         int* votes = _votes;
         memset( votes, 0, sizeof(*votes)*nclasses );
-        for( k = 0; k < ntrees; k++ )
+        for( int k = 0; k < ntrees; k++ )
         {
             CvDTreeNode* predicted_node = trees[k]->predict( sample, missing );
-            int nvotes;
             int class_idx = predicted_node->class_idx;
             CV_Assert( 0 <= class_idx && class_idx < nclasses );
 			
-            nvotes = ++votes[class_idx];
-            if( nvotes > max_nvotes )
-            {
-                max_nvotes = nvotes;
-                result = predicted_node->value;
-            }
+            ++votes[class_idx];
         }
 		
 		return float(votes[1])/ntrees;
@@ -736,7 +730,8 @@ void CvRTrees::write( CvFileStorage* fs, const char* name ) const
     if( ntrees < 1 || !trees || nsamples < 1 )
         CV_Error( CV_StsBadArg, "Invalid CvRTrees object" );
 
-    cvStartWriteStruct( fs, name, CV_NODE_MAP, CV_TYPE_NAME_ML_RTREES );
+    std::string modelNodeName = this->getName();
+    cvStartWriteStruct( fs, name, CV_NODE_MAP, modelNodeName.c_str() );
 
     cvWriteInt( fs, "nclasses", nclasses );
     cvWriteInt( fs, "nsamples", nsamples );
@@ -813,11 +808,16 @@ void CvRTrees::read( CvFileStorage* fs, CvFileNode* fnode )
     active_var_mask = cvCreateMat( 1, var_count, CV_8UC1 );
     {
         // initialize active variables mask
-        CvMat submask1, submask2;
-        cvGetCols( active_var_mask, &submask1, 0, nactive_vars );
-        cvGetCols( active_var_mask, &submask2, nactive_vars, var_count );
+        CvMat submask1;
+		cvGetCols( active_var_mask, &submask1, 0, nactive_vars );
         cvSet( &submask1, cvScalar(1) );
-        cvZero( &submask2 );
+
+		if( nactive_vars < var_count )
+		{
+			CvMat submask2;
+			cvGetCols( active_var_mask, &submask2, nactive_vars, var_count );
+			cvZero( &submask2 );
+		}
     }
 }
 

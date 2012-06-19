@@ -18,7 +18,7 @@ Reads an image from a buffer in memory.
     :param buf: Input array or vector of bytes.
 
     :param flags: The same flags as in  :ocv:func:`imread` .
-    
+
 The function reads an image from the specified buffer in the memory.
 If the buffer is too short or contains invalid data, the empty matrix/image is returned.
 
@@ -31,9 +31,9 @@ Encodes an image into a memory buffer.
 
 .. ocv:function:: bool imencode( const string& ext, InputArray img, vector<uchar>& buf, const vector<int>& params=vector<int>())
 
-.. ocv:cfunction:: CvMat* cvEncodeImage(const char* ext, const CvArr* image, const int* params=NULL )
+.. ocv:cfunction:: CvMat* cvEncodeImage( const char* ext, const CvArr* image, const int* params=0 )
 
-.. ocv:pyfunction:: cv2.imencode(ext, img, buf[, params]) -> retval
+.. ocv:pyfunction:: cv2.imencode(ext, img[, params]) -> retval, buf
 
     :param ext: File extension that defines the output format.
 
@@ -57,13 +57,13 @@ Loads an image from a file.
 
 .. ocv:pyfunction:: cv2.imread(filename[, flags]) -> retval
 
-.. ocv:cfunction:: IplImage* cvLoadImage( const char* filename, int flags=CV_LOAD_IMAGE_COLOR )
+.. ocv:cfunction:: IplImage* cvLoadImage( const char* filename, int iscolor=CV_LOAD_IMAGE_COLOR )
 
-.. ocv:cfunction:: CvMat* cvLoadImageM( const char* filename, int flags=CV_LOAD_IMAGE_COLOR )
+.. ocv:cfunction:: CvMat* cvLoadImageM( const char* filename, int iscolor=CV_LOAD_IMAGE_COLOR )
 
-.. ocv:pyoldfunction:: cv.LoadImage(filename, flags=CV_LOAD_IMAGE_COLOR)->None
+.. ocv:pyoldfunction:: cv.LoadImage(filename, iscolor=CV_LOAD_IMAGE_COLOR) -> None
 
-.. ocv:pyoldfunction:: cv.LoadImageM(filename, flags=CV_LOAD_IMAGE_COLOR)->None
+.. ocv:pyoldfunction:: cv.LoadImageM(filename, iscolor=CV_LOAD_IMAGE_COLOR) -> None
 
     :param filename: Name of file to be loaded.
 
@@ -103,11 +103,11 @@ imwrite
 -----------
 Saves an image to a specified file.
 
-.. ocv:function:: bool imwrite( const string& filename, InputArray image, const vector<int>& params=vector<int>())
+.. ocv:function:: bool imwrite( const string& filename, InputArray img, const vector<int>& params=vector<int>() )
 
-.. ocv:pyfunction:: cv2.imwrite(filename, image[, params]) -> retval
+.. ocv:pyfunction:: cv2.imwrite(filename, img[, params]) -> retval
 
-.. ocv:cfunction:: int cvSaveImage( const char* filename, const CvArr* image )
+.. ocv:cfunction:: int cvSaveImage( const char* filename, const CvArr* image, const int* params=0 )
 
 .. ocv:pyoldfunction:: cv.SaveImage(filename, image)-> None
 
@@ -127,6 +127,51 @@ The function ``imwrite`` saves the image to the specified file. The image format
 :ocv:func:`imread` for the list of extensions). Only 8-bit (or 16-bit in case of PNG, JPEG 2000, and TIFF) single-channel or 3-channel (with 'BGR' channel order) images can be saved using this function. If the format, depth or channel order is different, use
 :ocv:func:`Mat::convertTo` , and
 :ocv:func:`cvtColor` to convert it before saving. Or, use the universal XML I/O functions to save the image to XML or YAML format.
+
+It is possible to store PNG images with an alpha channel using this function. To do this, create 8-bit (or 16-bit) 4-channel image BGRA, where the alpha channel goes last. Fully transparent pixels should have alpha set to 0, fully opaque pixels should have alpha set to 255/65535. The sample below shows how to create such a BGRA image and store to PNG file. It also demonstrates how to set custom compression parameters ::
+
+    #include <vector>
+    #include <stdio.h>
+    #include <opencv2/opencv.hpp>
+
+    using namespace cv;
+    using namespace std;
+
+    void createAlphaMat(Mat &mat)
+    {
+        for (int i = 0; i < mat.rows; ++i) {
+            for (int j = 0; j < mat.cols; ++j) {
+                Vec4b& rgba = mat.at<Vec4b>(i, j);
+                rgba[0] = UCHAR_MAX;
+                rgba[1] = saturate_cast<uchar>((float (mat.cols - j)) / ((float)mat.cols) * UCHAR_MAX);
+                rgba[2] = saturate_cast<uchar>((float (mat.rows - i)) / ((float)mat.rows) * UCHAR_MAX);
+                rgba[3] = saturate_cast<uchar>(0.5 * (rgba[1] + rgba[2]));
+            }
+        }
+    }
+
+    int main(int argv, char **argc)
+    {
+        // Create mat with alpha channel
+        Mat mat(480, 640, CV_8UC4);
+        createAlphaMat(mat);
+
+        vector<int> compression_params;
+        compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
+        compression_params.push_back(9);
+
+        try {
+            imwrite("alpha.png", mat, compression_params);
+        }
+        catch (runtime_error& ex) {
+            fprintf(stderr, "Exception converting image to PNG format: %s\n", ex.what());
+            return 1;
+        }
+
+        fprintf(stdout, "Saved PNG file with alpha data.\n");
+        return 0;
+    }
+
 
 VideoCapture
 ------------
@@ -180,7 +225,7 @@ VideoCapture constructors.
 .. ocv:pyfunction:: cv2.VideoCapture(device) -> <VideoCapture object>
 
 .. ocv:cfunction:: CvCapture* cvCaptureFromCAM( int device )
-.. ocv:pyoldfunction:: cv.CaptureFromCAM(device) -> CvCapture
+.. ocv:pyoldfunction:: cv.CaptureFromCAM(index) -> CvCapture
 .. ocv:cfunction:: CvCapture* cvCaptureFromFile( const char* filename )
 .. ocv:pyoldfunction:: cv.CaptureFromFile(filename) -> CvCapture
 
@@ -198,14 +243,14 @@ Open video file or a capturing device for video capturing
 .. ocv:function:: bool VideoCapture::open(const string& filename)
 .. ocv:function:: bool VideoCapture::open(int device)
 
-.. ocv:pyfunction:: cv2.VideoCapture.open(filename) -> successFlag
-.. ocv:pyfunction:: cv2.VideoCapture.open(device) -> successFlag
+.. ocv:pyfunction:: cv2.VideoCapture.open(filename) -> retval
+.. ocv:pyfunction:: cv2.VideoCapture.open(device) -> retval
 
     :param filename: name of the opened video file
 
     :param device: id of the opened video capturing device (i.e. a camera index).
 
-The methods first call :ocv:func:`VideoCapture::release` to close the already opened file or camera. 
+The methods first call :ocv:func:`VideoCapture::release` to close the already opened file or camera.
 
 
 VideoCapture::isOpened
@@ -214,7 +259,7 @@ Returns true if video capturing has been initialized already.
 
 .. ocv:function:: bool VideoCapture::isOpened()
 
-.. ocv:pyfunction:: cv2.VideoCapture.isOpened() -> flag
+.. ocv:pyfunction:: cv2.VideoCapture.isOpened() -> retval
 
 If the previous call to ``VideoCapture`` constructor or ``VideoCapture::open`` succeeded, the method returns true.
 
@@ -224,7 +269,7 @@ Closes video file or capturing device.
 
 .. ocv:function:: void VideoCapture::release()
 
-.. ocv:pyfunction:: cv2.VideoCapture.release()
+.. ocv:pyfunction:: cv2.VideoCapture.release() -> None
 
 .. ocv:cfunction:: void cvReleaseCapture(CvCapture** capture)
 
@@ -239,7 +284,7 @@ Grabs the next frame from video file or capturing device.
 
 .. ocv:function:: bool VideoCapture::grab()
 
-.. ocv:pyfunction:: cv2.VideoCapture.grab() -> successFlag
+.. ocv:pyfunction:: cv2.VideoCapture.grab() -> retval
 
 .. ocv:cfunction:: int cvGrabFrame(CvCapture* capture)
 
@@ -249,7 +294,7 @@ The methods/functions grab the next frame from video file or camera and return t
 
 The primary use of the function is in multi-camera environments, especially when the cameras do not have hardware synchronization. That is, you call ``VideoCapture::grab()`` for each camera and after that call the slower method ``VideoCapture::retrieve()`` to decode and get frame from each camera. This way the overhead on demosaicing or motion jpeg decompression etc. is eliminated and the retrieved frames from different cameras will be closer in time.
 
-Also, when a connected camera is multi-head (for example, a stereo camera or a Kinect device), the correct way of retrieving data from it is to call `VideoCapture::grab` first and then call :ocv:func:`VideoCapture::retrieve` one or more times with different values of the ``channel`` parameter. See https://code.ros.org/svn/opencv/trunk/opencv/samples/cpp/kinect_maps.cpp
+Also, when a connected camera is multi-head (for example, a stereo camera or a Kinect device), the correct way of retrieving data from it is to call `VideoCapture::grab` first and then call :ocv:func:`VideoCapture::retrieve` one or more times with different values of the ``channel`` parameter. See http://code.opencv.org/svn/opencv/trunk/opencv/samples/cpp/kinect_maps.cpp
 
 
 VideoCapture::retrieve
@@ -258,13 +303,13 @@ Decodes and returns the grabbed video frame.
 
 .. ocv:function:: bool VideoCapture::retrieve(Mat& image, int channel=0)
 
-.. ocv:pyfunction:: cv2.VideoCapture.retrieve([image[, channel]]) -> successFlag, image
+.. ocv:pyfunction:: cv2.VideoCapture.retrieve([image[, channel]]) -> retval, image
 
-.. ocv:cfunction:: IplImage* cvRetrieveFrame(CvCapture* capture)
+.. ocv:cfunction:: IplImage* cvRetrieveFrame( CvCapture* capture, int streamIdx=0 )
 
-.. ocv:pyoldfunction:: cv.RetrieveFrame(capture) -> iplimage
+.. ocv:pyoldfunction:: cv.RetrieveFrame(capture) -> image
 
-The methods/functions decode and retruen the just grabbed frame. If no frames has been grabbed (camera has been disconnected, or there are no more frames in video file), the methods return false and the functions return NULL pointer.
+The methods/functions decode and return the just grabbed frame. If no frames has been grabbed (camera has been disconnected, or there are no more frames in video file), the methods return false and the functions return NULL pointer.
 
 .. note:: OpenCV 1.x functions ``cvRetrieveFrame`` and ``cv.RetrieveFrame`` return image stored inside the video capturing structure. It is not allowed to modify or release the image! You can copy the frame using :ocv:cfunc:`cvCloneImage` and then do whatever you want with the copy.
 
@@ -277,28 +322,28 @@ Grabs, decodes and returns the next video frame.
 
 .. ocv:function:: bool VideoCapture::read(Mat& image)
 
-.. ocv:pyfunction:: cv2.VideoCapture.read([image]) -> successFlag, image
+.. ocv:pyfunction:: cv2.VideoCapture.read([image]) -> retval, image
 
 .. ocv:cfunction:: IplImage* cvQueryFrame(CvCapture* capture)
 
-.. ocv:pyoldfunction:: cv.QueryFrame(capture) -> iplimage
+.. ocv:pyoldfunction:: cv.QueryFrame(capture) -> image
 
-The methods/functions combine :ocv:func:`VideoCapture::grab` and :ocv:func:`VideoCapture::retrieve` in one call. This is the most convenient method for reading video files or capturing data from decode and retruen the just grabbed frame. If no frames has been grabbed (camera has been disconnected, or there are no more frames in video file), the methods return false and the functions return NULL pointer.
+The methods/functions combine :ocv:func:`VideoCapture::grab` and :ocv:func:`VideoCapture::retrieve` in one call. This is the most convenient method for reading video files or capturing data from decode and return the just grabbed frame. If no frames has been grabbed (camera has been disconnected, or there are no more frames in video file), the methods return false and the functions return NULL pointer.
 
 .. note:: OpenCV 1.x functions ``cvRetrieveFrame`` and ``cv.RetrieveFrame`` return image stored inside the video capturing structure. It is not allowed to modify or release the image! You can copy the frame using :ocv:cfunc:`cvCloneImage` and then do whatever you want with the copy.
 
 
 VideoCapture::get
 ---------------------
-Returns the specified ``VideoCapture`` property 
+Returns the specified ``VideoCapture`` property
 
 .. ocv:function:: double VideoCapture::get(int propId)
 
 .. ocv:pyfunction:: cv2.VideoCapture.get(propId) -> retval
 
-.. ocv:cfunction:: double cvGetCaptureProperty( CvCapture* capture, int propId )
+.. ocv:cfunction:: double cvGetCaptureProperty( CvCapture* capture, int property_id )
 
-.. ocv:pyoldfunction:: cv.GetCaptureProperty(capture, propId)->double
+.. ocv:pyoldfunction:: cv.GetCaptureProperty(capture, property_id) -> float
 
 
     :param propId: Property identifier. It can be one of the following:
@@ -348,13 +393,13 @@ VideoCapture::set
 ---------------------
 Sets a property in the ``VideoCapture``.
 
-.. ocv:function:: bool VideoCapture::set(int propertyId, double value)
+.. ocv:function:: bool VideoCapture::set( int propId, double value )
 
 .. ocv:pyfunction:: cv2.VideoCapture.set(propId, value) -> retval
 
-.. ocv:cfunction:: int cvSetCaptureProperty( CvCapture* capture, int propId, double value )
+.. ocv:cfunction:: int cvSetCaptureProperty( CvCapture* capture, int property_id, double value )
 
-.. ocv:pyoldfunction:: cv.SetCaptureProperty(capture, propId, value)->None
+.. ocv:pyoldfunction:: cv.SetCaptureProperty(capture, property_id, value) -> retval
 
     :param propId: Property identifier. It can be one of the following:
 
@@ -418,22 +463,22 @@ VideoWriter constructors
 
 .. ocv:pyfunction:: cv2.VideoWriter([filename, fourcc, fps, frameSize[, isColor]]) -> <VideoWriter object>
 
-.. ocv:cfunction:: CvVideoWriter* cvCreateVideoWriter( const char* filename, int fourcc, double fps, CvSize frameSize, int isColor=1 )
-.. ocv:pyoldfunction:: cv.CreateVideoWriter(filename, fourcc, fps, frameSize, isColor) -> CvVideoWriter
+.. ocv:cfunction:: CvVideoWriter* cvCreateVideoWriter( const char* filename, int fourcc, double fps, CvSize frame_size, int is_color=1 )
+.. ocv:pyoldfunction:: cv.CreateVideoWriter(filename, fourcc, fps, frame_size, is_color=true) -> CvVideoWriter
 
 .. ocv:pyfunction:: cv2.VideoWriter.isOpened() -> retval
 .. ocv:pyfunction:: cv2.VideoWriter.open(filename, fourcc, fps, frameSize[, isColor]) -> retval
 .. ocv:pyfunction:: cv2.VideoWriter.write(image) -> None
 
-    :param filename: Name of the output video file. 
+    :param filename: Name of the output video file.
 
     :param fourcc: 4-character code of codec used to compress the frames. For example, ``CV_FOURCC('P','I','M,'1')``  is a MPEG-1 codec, ``CV_FOURCC('M','J','P','G')``  is a motion-jpeg codec etc.
 
-    :param fps: Framerate of the created video stream. 
+    :param fps: Framerate of the created video stream.
 
-    :param frameSize: Size of the  video frames. 
+    :param frameSize: Size of the  video frames.
 
-    :param isColor: If it is not zero, the encoder will expect and encode color frames, otherwise it will work with grayscale frames (the flag is currently supported on Windows only). 
+    :param isColor: If it is not zero, the encoder will expect and encode color frames, otherwise it will work with grayscale frames (the flag is currently supported on Windows only).
 
 The constructors/functions initialize video writers. On Linux FFMPEG is used to write videos; on Windows FFMPEG or VFW is used; on MacOSX QTKit is used.
 
@@ -481,9 +526,9 @@ Writes the next video frame
 .. ocv:cfunction:: int cvWriteFrame( CvVideoWriter* writer, const IplImage* image )
 .. ocv:pyoldfunction:: cv.WriteFrame(writer, image)->int
 
-    :param writer: Video writer structure (OpenCV 1.x API) 
-    
-    :param image: The written frame 
-    
+    :param writer: Video writer structure (OpenCV 1.x API)
+
+    :param image: The written frame
+
 The functions/methods write the specified image to video file. It must have the same size as has been specified when opening the video writer.
 

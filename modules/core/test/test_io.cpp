@@ -91,7 +91,7 @@ protected:
             {-1000000, 1000000}, {-10, 10}, {-10, 10}};
         RNG& rng = ts->get_rng();
         RNG rng0;
-        test_case_count = 2;
+        test_case_count = 4;
         int progress = 0;
         MemStorage storage(cvCreateMemStorage(0));
         
@@ -102,9 +102,10 @@ protected:
             
             cvClearMemStorage(storage);
             
+            bool mem = (idx % 4) >= 2;
             string filename = tempfile(idx % 2 ? ".yml" : ".xml");
             
-            FileStorage fs(filename.c_str(), FileStorage::WRITE);
+            FileStorage fs(filename, FileStorage::WRITE + (mem ? FileStorage::MEMORY : 0));
             
             int test_int = (int)cvtest::randInt(rng);
             double test_real = (cvtest::randInt(rng)%2?1:-1)*exp(cvtest::randReal(rng)*18-9);
@@ -179,11 +180,11 @@ protected:
             fs.writeObj("test_graph",graph);
             CvGraph* graph2 = (CvGraph*)cvClone(graph);
             
-            fs.release();
+            string content = fs.releaseAndGetString();
             
-            if(!fs.open(filename.c_str(), FileStorage::READ))
+            if(!fs.open(mem ? content : filename, FileStorage::READ + (mem ? FileStorage::MEMORY : 0)))
             {
-                ts->printf( cvtest::TS::LOG, "filename %s can not be read\n", filename.c_str() );
+                ts->printf( cvtest::TS::LOG, "filename %s can not be read\n", !mem ? filename.c_str() : content.c_str());
                 ts->set_failed_test_info( cvtest::TS::FAIL_MISSING_TEST_DATA );
                 return;
             }
@@ -310,7 +311,6 @@ protected:
             int real_width = (int)tm["width"];
             int real_height = (int)tm["height"];
             
-            
             int real_lbp_val = 0;
             FileNodeIterator it;
             it = tm_lbp.begin();
@@ -370,9 +370,86 @@ protected:
             }
             
             fs.release();
-            remove(filename.c_str());
+            if( !mem )
+                remove(filename.c_str());
         }
     }
 };
 
 TEST(Core_InputOutput, write_read_consistency) { Core_IOTest test; test.safe_run(); }
+
+
+class CV_MiscIOTest : public cvtest::BaseTest
+{
+public:
+    CV_MiscIOTest() {}
+    ~CV_MiscIOTest() {}   
+protected:
+    void run(int)
+    {
+        try
+        {
+            FileStorage fs("test.xml", FileStorage::WRITE);
+            vector<int> mi, mi2, mi3, mi4;
+            vector<Mat> mv, mv2, mv3, mv4;
+            Mat m(10, 9, CV_32F);
+            Mat empty;
+            randu(m, 0, 1);
+            mi3.push_back(5);
+            mv3.push_back(m);
+            fs << "mi" << mi;
+            fs << "mv" << mv;
+            fs << "mi3" << mi3;
+            fs << "mv3" << mv3;
+            fs << "empty" << empty;
+            fs.release();
+            fs.open("test.xml", FileStorage::READ);
+            fs["mi"] >> mi2;
+            fs["mv"] >> mv2;
+            fs["mi3"] >> mi4;
+            fs["mv3"] >> mv4;
+            fs["empty"] >> empty;
+            CV_Assert( mi2.empty() );
+            CV_Assert( mv2.empty() );
+            CV_Assert( norm(mi3, mi4, CV_C) == 0 );
+            CV_Assert( mv4.size() == 1 );
+            double n = norm(mv3[0], mv4[0], CV_C);
+            CV_Assert( n == 0 );
+        }
+        catch(...)
+        {
+            ts->set_failed_test_info(cvtest::TS::FAIL_MISMATCH);
+        }
+    }
+};
+
+TEST(Core_InputOutput, misc) { CV_MiscIOTest test; test.safe_run(); }
+
+/*class CV_BigMatrixIOTest : public cvtest::BaseTest
+{
+public:
+    CV_BigMatrixIOTest() {}
+    ~CV_BigMatrixIOTest() {}   
+protected:
+    void run(int)
+    {
+        try
+        {
+            RNG& rng = theRNG();
+            int N = 1000, M = 1200000;
+            Mat mat(M, N, CV_32F);
+            rng.fill(mat, RNG::UNIFORM, 0, 1);
+            FileStorage fs("test.xml", FileStorage::WRITE);
+            fs << "mat" << mat;
+            fs.release();
+        }
+        catch(...)
+        {
+            ts->set_failed_test_info(cvtest::TS::FAIL_MISMATCH);
+        }
+    }
+};
+
+TEST(Core_InputOutput, huge) { CV_BigMatrixIOTest test; test.safe_run(); }
+*/
+

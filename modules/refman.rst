@@ -16,3 +16,9 @@ OpenCV API Reference
    ml/doc/ml.rst
    flann/doc/flann.rst
    gpu/doc/gpu.rst
+   photo/doc/photo.rst
+   stitching/doc/stitching.rst
+   nonfree/doc/nonfree.rst
+   contrib/doc/contrib.rst
+   legacy/doc/legacy.rst
+

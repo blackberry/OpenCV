@@ -674,7 +674,7 @@ private:
         }
         delete[] centers_idx;
 
-        DistanceType* radiuses = new DistanceType[branching];
+        std::vector<DistanceType> radiuses(branching);
         int* count = new int[branching];
         for (int i=0; i<branching; ++i) {
             radiuses[i] = 0;
@@ -775,7 +775,7 @@ private:
 
         for (int i=0; i<branching; ++i) {
             centers[i] = new DistanceType[veclen_];
-            memoryCounter_ += veclen_*sizeof(DistanceType);
+            memoryCounter_ += (int)(veclen_*sizeof(DistanceType));
             for (size_t k=0; k<veclen_; ++k) {
                 centers[i][k] = (DistanceType)dcenters[i][k];
             }
@@ -817,7 +817,6 @@ private:
 
         delete[] dcenters.data;
         delete[] centers;
-        delete[] radiuses;
         delete[] count;
         delete[] belongs_to;
     }

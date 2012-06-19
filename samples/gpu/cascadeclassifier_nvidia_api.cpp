@@ -6,8 +6,8 @@
 #include <iostream>
 #include <iomanip>
 #include <cstdio>
-#include "opencv2/opencv.hpp"
 #include "opencv2/gpu/gpu.hpp"
+#include "opencv2/highgui/highgui.hpp"
 
 #ifdef HAVE_CUDA
 #include "NCVHaarObjectDetection.hpp"
@@ -154,6 +154,8 @@ int main(int argc, const char** argv)
     ncvAssertPrintReturn(cv::gpu::getCudaEnabledDeviceCount() != 0, "No GPU found or the library is compiled without GPU support", -1);
     ncvAssertPrintReturn(argc == 3, "Invalid number of arguments", -1);
 
+    cv::gpu::printShortCudaDeviceInfo(cv::gpu::getDevice());
+
     string cascadeName = argv[1];
     string inputName = argv[2];
 
@@ -226,6 +228,7 @@ int main(int argc, const char** argv)
     NCVVectorAlloc<HaarClassifierNode128> h_haarNodes(cpuCascadeAllocator, haarNumNodes);
     ncvAssertPrintReturn(h_haarNodes.isMemAllocated(), "Error in cascade CPU allocator", -1);
     NCVVectorAlloc<HaarFeature64> h_haarFeatures(cpuCascadeAllocator, haarNumFeatures);
+
     ncvAssertPrintReturn(h_haarFeatures.isMemAllocated(), "Error in cascade CPU allocator", -1);
 
     HaarClassifierCascadeDescriptor haar;

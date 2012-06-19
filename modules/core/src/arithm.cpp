@@ -99,7 +99,7 @@ void vBinOp8(const T* src1, size_t step1, const T* src2, size_t step2, T* dst, s
             }
         }
     #endif
-
+#if CV_ENABLE_UNROLLED
         for( ; x <= sz.width - 4; x += 4 )
         {
             T v0 = op(src1[x], src2[x]);
@@ -109,7 +109,7 @@ void vBinOp8(const T* src1, size_t step1, const T* src2, size_t step2, T* dst, s
             v1 = op(src1[x+3], src2[x+3]);
             dst[x+2] = v0; dst[x+3] = v1;
         }
-
+#endif
         for( ; x < sz.width; x++ )
             dst[x] = op(src1[x], src2[x]);
     }
@@ -140,7 +140,7 @@ void vBinOp16(const T* src1, size_t step1, const T* src2, size_t step2,
                 r0 = op16(r0,_mm_loadu_si128((const __m128i*)(src2 + x)));
                 r1 = op16(r1,_mm_loadu_si128((const __m128i*)(src2 + x + 8)));
                 _mm_storeu_si128((__m128i*)(dst + x), r0);
-                _mm_storeu_si128((__m128i*)(dst + x + 16), r1);
+                _mm_storeu_si128((__m128i*)(dst + x + 8), r1);
             }
             for( ; x <= sz.width - 4; x += 4 )
             {
@@ -194,7 +194,7 @@ void vBinOp32s(const int* src1, size_t step1, const int* src2, size_t step2,
                     r0 = op32(r0,_mm_load_si128((const __m128i*)(src2 + x)));
                     r1 = op32(r1,_mm_load_si128((const __m128i*)(src2 + x + 4)));
                     _mm_store_si128((__m128i*)(dst + x), r0);
-                    _mm_store_si128((__m128i*)(dst + x + 16), r1);
+                    _mm_store_si128((__m128i*)(dst + x + 4), r1);
                 }
             else
                 for( ; x <= sz.width - 8; x += 8 )
@@ -204,11 +204,11 @@ void vBinOp32s(const int* src1, size_t step1, const int* src2, size_t step2,
                     r0 = op32(r0,_mm_loadu_si128((const __m128i*)(src2 + x)));
                     r1 = op32(r1,_mm_loadu_si128((const __m128i*)(src2 + x + 4)));
                     _mm_storeu_si128((__m128i*)(dst + x), r0);
-                    _mm_storeu_si128((__m128i*)(dst + x + 16), r1);
+                    _mm_storeu_si128((__m128i*)(dst + x + 4), r1);
                 }
         }
 #endif
-
+#if CV_ENABLE_UNROLLED
         for( ; x <= sz.width - 4; x += 4 )
         {
             int v0 = op(src1[x], src2[x]);
@@ -218,7 +218,7 @@ void vBinOp32s(const int* src1, size_t step1, const int* src2, size_t step2,
             v1 = op(src1[x+3], src2[x+3]);
             dst[x+2] = v0; dst[x+3] = v1;
         }
-
+#endif
         for( ; x < sz.width; x++ )
             dst[x] = op(src1[x], src2[x]);
     }
@@ -265,6 +265,7 @@ void vBinOp32f(const float* src1, size_t step1, const float* src2, size_t step2,
                 }
         }
     #endif
+#if CV_ENABLE_UNROLLED
         for( ; x <= sz.width - 4; x += 4 )
         {
             float v0 = op(src1[x], src2[x]);
@@ -274,7 +275,7 @@ void vBinOp32f(const float* src1, size_t step1, const float* src2, size_t step2,
             v1 = op(src1[x+3], src2[x+3]);
             dst[x+2] = v0; dst[x+3] = v1;
         }
-
+#endif
         for( ; x < sz.width; x++ )
             dst[x] = op(src1[x], src2[x]);
     }
@@ -452,7 +453,7 @@ struct _VAbsDiff64f
 struct _VAnd8u { __m128i operator()(const __m128i& a, const __m128i& b) const { return _mm_and_si128(a,b); }};
 struct _VOr8u  { __m128i operator()(const __m128i& a, const __m128i& b) const { return _mm_or_si128(a,b); }};
 struct _VXor8u { __m128i operator()(const __m128i& a, const __m128i& b) const { return _mm_xor_si128(a,b); }};
-struct _VNot8u { __m128i operator()(const __m128i& a, const __m128i&) const { return _mm_andnot_si128(_mm_setzero_si128(),a); }};
+struct _VNot8u { __m128i operator()(const __m128i& a, const __m128i&) const { return _mm_xor_si128(_mm_set1_epi32(-1),a); }};
 
 #endif
 
@@ -1026,6 +1027,7 @@ void binary_op(InputArray _src1, InputArray _src2, OutputArray _dst,
     int cn = src1.channels();
     BinaryFunc copymask = 0;
     Mat mask;
+    bool reallocate = false;
 
     if( haveMask )
     {
@@ -1033,6 +1035,8 @@ void binary_op(InputArray _src1, InputArray _src2, OutputArray _dst,
         CV_Assert( (mask.type() == CV_8UC1 || mask.type() == CV_8SC1) );
         CV_Assert( mask.size == src1.size );
         copymask = getCopyMaskFunc(esz);
+        Mat tdst = _dst.getMat();
+        reallocate = tdst.size != src1.size || tdst.type() != src1.type();
     }
 
     AutoBuffer<uchar> _buf;
@@ -1040,6 +1044,11 @@ void binary_op(InputArray _src1, InputArray _src2, OutputArray _dst,
 
     _dst.create(src1.dims, src1.size, src1.type());
     Mat dst = _dst.getMat();
+    
+    // if this is mask operation and dst has been reallocated,
+    // we have to 
+    if( haveMask && reallocate )
+        dst = Scalar::all(0);
 
     if( bitwise )
     {
@@ -1124,55 +1133,45 @@ void binary_op(InputArray _src1, InputArray _src2, OutputArray _dst,
 
 static BinaryFunc maxTab[] =
 {
-    (BinaryFunc)max8u, (BinaryFunc)max8s, (BinaryFunc)max16u, (BinaryFunc)max16s,
-    (BinaryFunc)max32s, (BinaryFunc)max32f, (BinaryFunc)max64f, 0
+    (BinaryFunc)GET_OPTIMIZED(max8u), (BinaryFunc)GET_OPTIMIZED(max8s),
+    (BinaryFunc)GET_OPTIMIZED(max16u), (BinaryFunc)GET_OPTIMIZED(max16s),
+    (BinaryFunc)GET_OPTIMIZED(max32s),
+    (BinaryFunc)GET_OPTIMIZED(max32f), (BinaryFunc)max64f,
+    0
 };
 
 static BinaryFunc minTab[] =
 {
-    (BinaryFunc)min8u, (BinaryFunc)min8s, (BinaryFunc)min16u, (BinaryFunc)min16s,
-    (BinaryFunc)min32s, (BinaryFunc)min32f, (BinaryFunc)min64f, 0
+    (BinaryFunc)GET_OPTIMIZED(min8u), (BinaryFunc)GET_OPTIMIZED(min8s),
+    (BinaryFunc)GET_OPTIMIZED(min16u), (BinaryFunc)GET_OPTIMIZED(min16s),
+    (BinaryFunc)GET_OPTIMIZED(min32s),
+    (BinaryFunc)GET_OPTIMIZED(min32f), (BinaryFunc)min64f,
+    0
 };
 
 }
 
 void cv::bitwise_and(InputArray a, InputArray b, OutputArray c, InputArray mask)
 {
-    BinaryFunc f = 
-#ifdef HAVE_TEGRA_OPTIMIZATION  
-		(BinaryFunc)tegra::
-#endif
-		and8u;
+    BinaryFunc f = (BinaryFunc)GET_OPTIMIZED(and8u);
     binary_op(a, b, c, mask, &f, true);
 }
 
 void cv::bitwise_or(InputArray a, InputArray b, OutputArray c, InputArray mask)
 {
-    BinaryFunc f = 
-#ifdef HAVE_TEGRA_OPTIMIZATION  
-		(BinaryFunc)tegra::
-#endif
-		or8u;
+    BinaryFunc f = (BinaryFunc)GET_OPTIMIZED(or8u);
     binary_op(a, b, c, mask, &f, true);
 }
 
 void cv::bitwise_xor(InputArray a, InputArray b, OutputArray c, InputArray mask)
 {
-    BinaryFunc f = 
-#ifdef HAVE_TEGRA_OPTIMIZATION  
-		(BinaryFunc)tegra::
-#endif
-		xor8u;
+    BinaryFunc f = (BinaryFunc)GET_OPTIMIZED(xor8u);
     binary_op(a, b, c, mask, &f, true);
 }
 
 void cv::bitwise_not(InputArray a, OutputArray c, InputArray mask)
 {
-    BinaryFunc f = 
-#ifdef HAVE_TEGRA_OPTIMIZATION  
-		(BinaryFunc)tegra::
-#endif
-		not8u;
+    BinaryFunc f = (BinaryFunc)GET_OPTIMIZED(not8u);
     binary_op(a, a, c, mask, &f, true);
 }
 
@@ -1223,6 +1222,7 @@ void arithm_op(InputArray _src1, InputArray _src2, OutputArray _dst,
     int kind1 = _src1.kind(), kind2 = _src2.kind();
     Mat src1 = _src1.getMat(), src2 = _src2.getMat();
     bool haveMask = !_mask.empty();
+    bool reallocate = false;
 
     if( kind1 == kind2 && src1.dims <= 2 && src2.dims <= 2 &&
         src1.size() == src2.size() && src1.type() == src2.type() &&
@@ -1311,6 +1311,8 @@ void arithm_op(InputArray _src1, InputArray _src2, OutputArray _dst,
         CV_Assert( (mask.type() == CV_8UC1 || mask.type() == CV_8SC1) );
         CV_Assert( mask.size == src1.size );
         copymask = getCopyMaskFunc(dsz);
+        Mat tdst = _dst.getMat();
+        reallocate = tdst.size != src1.size || tdst.type() != dtype;
     }
 
     AutoBuffer<uchar> _buf;
@@ -1319,6 +1321,10 @@ void arithm_op(InputArray _src1, InputArray _src2, OutputArray _dst,
 
     _dst.create(src1.dims, src1.size, dtype);
     Mat dst = _dst.getMat();
+    
+    if( haveMask && reallocate )
+        dst = Scalar::all(0);
+    
     BinaryFunc func = tab[CV_MAT_DEPTH(wtype)];
 
     if( !haveScalar )
@@ -1453,38 +1459,31 @@ void arithm_op(InputArray _src1, InputArray _src2, OutputArray _dst,
     }
 }
 
-#ifdef HAVE_TEGRA_OPTIMIZATION  
 static BinaryFunc addTab[] =
 {
-    (BinaryFunc)tegra::add8u, (BinaryFunc)add8s, (BinaryFunc)add16u, (BinaryFunc)add16s,
-    (BinaryFunc)add32s, (BinaryFunc)add32f, (BinaryFunc)add64f, 0
+    (BinaryFunc)GET_OPTIMIZED(add8u), (BinaryFunc)GET_OPTIMIZED(add8s),
+    (BinaryFunc)GET_OPTIMIZED(add16u), (BinaryFunc)GET_OPTIMIZED(add16s),
+    (BinaryFunc)GET_OPTIMIZED(add32s),
+    (BinaryFunc)GET_OPTIMIZED(add32f), (BinaryFunc)add64f,
+    0
 };
 
 static BinaryFunc subTab[] =
 {
-    (BinaryFunc)tegra::sub8u, (BinaryFunc)sub8s, (BinaryFunc)sub16u, (BinaryFunc)sub16s,
-    (BinaryFunc)sub32s, (BinaryFunc)sub32f, (BinaryFunc)sub64f, 0
+    (BinaryFunc)GET_OPTIMIZED(sub8u), (BinaryFunc)GET_OPTIMIZED(sub8s),
+    (BinaryFunc)GET_OPTIMIZED(sub16u), (BinaryFunc)GET_OPTIMIZED(sub16s),
+    (BinaryFunc)GET_OPTIMIZED(sub32s),
+    (BinaryFunc)GET_OPTIMIZED(sub32f), (BinaryFunc)sub64f,
+    0
 };
-
-#else
-static BinaryFunc addTab[] =
-{
-    (BinaryFunc)add8u, (BinaryFunc)add8s, (BinaryFunc)add16u, (BinaryFunc)add16s,
-    (BinaryFunc)add32s, (BinaryFunc)add32f, (BinaryFunc)add64f, 0
-};
-
-static BinaryFunc subTab[] =
-{
-    (BinaryFunc)sub8u, (BinaryFunc)sub8s, (BinaryFunc)sub16u, (BinaryFunc)sub16s,
-    (BinaryFunc)sub32s, (BinaryFunc)sub32f, (BinaryFunc)sub64f, 0
-};
-#endif
 
 static BinaryFunc absdiffTab[] =
 {
-    (BinaryFunc)absdiff8u, (BinaryFunc)absdiff8s, (BinaryFunc)absdiff16u,
-    (BinaryFunc)absdiff16s, (BinaryFunc)absdiff32s, (BinaryFunc)absdiff32f,
-    (BinaryFunc)absdiff64f, 0
+    (BinaryFunc)GET_OPTIMIZED(absdiff8u), (BinaryFunc)GET_OPTIMIZED(absdiff8s),
+    (BinaryFunc)GET_OPTIMIZED(absdiff16u), (BinaryFunc)GET_OPTIMIZED(absdiff16s),
+    (BinaryFunc)GET_OPTIMIZED(absdiff32s),
+    (BinaryFunc)GET_OPTIMIZED(absdiff32f), (BinaryFunc)absdiff64f,
+    0
 };
 
 }
@@ -1498,6 +1497,14 @@ void cv::add( InputArray src1, InputArray src2, OutputArray dst,
 void cv::subtract( InputArray src1, InputArray src2, OutputArray dst,
                InputArray mask, int dtype )
 {
+#ifdef HAVE_TEGRA_OPTIMIZATION
+    if(mask.empty() && src1.depth() == CV_8U && src2.depth() == CV_8U && (dtype == CV_16S || (dtype == -1 && dst.fixedType() && dst.depth() == CV_16S)))
+    {
+        Mat _dst = dst.getMat();
+        if(tegra::subtract_8u8u16s(src1.getMat(), src2.getMat(), _dst))
+            return;
+    }
+#endif
     arithm_op(src1, src2, dst, mask, dtype, subTab );
 }
 
@@ -1525,8 +1532,9 @@ mul_( const T* src1, size_t step1, const T* src2, size_t step2,
     {
         for( ; size.height--; src1 += step1, src2 += step2, dst += step )
         {
-            int i;
-            for( i = 0; i <= size.width - 4; i += 4 )
+            int i=0;
+			#if CV_ENABLE_UNROLLED
+            for(; i <= size.width - 4; i += 4 )
             {
                 T t0;
                 T t1;
@@ -1540,7 +1548,7 @@ mul_( const T* src1, size_t step1, const T* src2, size_t step2,
                 dst[i+2] = t0;
                 dst[i+3] = t1;
             }
-
+            #endif
             for( ; i < size.width; i++ )
                 dst[i] = saturate_cast<T>(src1[i] * src2[i]);
         }
@@ -1549,8 +1557,9 @@ mul_( const T* src1, size_t step1, const T* src2, size_t step2,
     {
         for( ; size.height--; src1 += step1, src2 += step2, dst += step )
         {
-            int i;
-            for( i = 0; i <= size.width - 4; i += 4 )
+            int i = 0;
+			#if CV_ENABLE_UNROLLED
+            for(; i <= size.width - 4; i += 4 )
             {
                 T t0 = saturate_cast<T>(scale*(WT)src1[i]*src2[i]);
                 T t1 = saturate_cast<T>(scale*(WT)src1[i+1]*src2[i+1]);
@@ -1560,7 +1569,7 @@ mul_( const T* src1, size_t step1, const T* src2, size_t step2,
                 t1 = saturate_cast<T>(scale*(WT)src1[i+3]*src2[i+3]);
                 dst[i+2] = t0; dst[i+3] = t1;
             }
-
+            #endif
             for( ; i < size.width; i++ )
                 dst[i] = saturate_cast<T>(scale*(WT)src1[i]*src2[i]);
         }
@@ -1578,6 +1587,7 @@ div_( const T* src1, size_t step1, const T* src2, size_t step2,
     for( ; size.height--; src1 += step1, src2 += step2, dst += step )
     {
         int i = 0;
+		#if CV_ENABLE_UNROLLED
         for( ; i <= size.width - 4; i += 4 )
         {
             if( src2[i] != 0 && src2[i+1] != 0 && src2[i+2] != 0 && src2[i+3] != 0 )
@@ -1607,7 +1617,7 @@ div_( const T* src1, size_t step1, const T* src2, size_t step2,
                 dst[i+2] = z2; dst[i+3] = z3;
             }
         }
-
+        #endif
         for( ; i < size.width; i++ )
             dst[i] = src2[i] != 0 ? saturate_cast<T>(src1[i]*scale/src2[i]) : 0;
     }
@@ -1623,6 +1633,7 @@ recip_( const T*, size_t, const T* src2, size_t step2,
     for( ; size.height--; src2 += step2, dst += step )
     {
         int i = 0;
+		#if CV_ENABLE_UNROLLED
         for( ; i <= size.width - 4; i += 4 )
         {
             if( src2[i] != 0 && src2[i+1] != 0 && src2[i+2] != 0 && src2[i+3] != 0 )
@@ -1652,7 +1663,7 @@ recip_( const T*, size_t, const T* src2, size_t step2,
                 dst[i+2] = z2; dst[i+3] = z3;
             }
         }
-
+        #endif
         for( ; i < size.width; i++ )
             dst[i] = src2[i] != 0 ? saturate_cast<T>(scale/src2[i]) : 0;
     }
@@ -1851,6 +1862,7 @@ addWeighted_( const T* src1, size_t step1, const T* src2, size_t step2,
     for( ; size.height--; src1 += step1, src2 += step2, dst += step )
     {
         int x = 0;
+		#if CV_ENABLE_UNROLLED
         for( ; x <= size.width - 4; x += 4 )
         {
             T t0 = saturate_cast<T>(src1[x]*alpha + src2[x]*beta + gamma);
@@ -1861,7 +1873,7 @@ addWeighted_( const T* src1, size_t step1, const T* src2, size_t step2,
             t1 = saturate_cast<T>(src1[x+3]*alpha + src2[x+3]*beta + gamma);
             dst[x+2] = t0; dst[x+3] = t1;
         }
-
+        #endif
         for( ; x < size.width; x++ )
             dst[x] = saturate_cast<T>(src1[x]*alpha + src2[x]*beta + gamma);
     }
@@ -1908,6 +1920,7 @@ addWeighted8u( const uchar* src1, size_t step1,
             }
         }
 #endif
+		#if CV_ENABLE_UNROLLED
         for( ; x <= size.width - 4; x += 4 )
         {
             float t0, t1;
@@ -1923,6 +1936,7 @@ addWeighted8u( const uchar* src1, size_t step1,
             dst[x+2] = saturate_cast<uchar>(t0);
             dst[x+3] = saturate_cast<uchar>(t1);
         }
+        #endif
 
         for( ; x < size.width; x++ )
         {
@@ -1970,8 +1984,8 @@ static void addWeighted64f( const double* src1, size_t step1, const double* src2
 
 static BinaryFunc addWeightedTab[] =
 {
-    (BinaryFunc)addWeighted8u, (BinaryFunc)addWeighted8s, (BinaryFunc)addWeighted16u,
-    (BinaryFunc)addWeighted16s, (BinaryFunc)addWeighted32s, (BinaryFunc)addWeighted32f,
+    (BinaryFunc)GET_OPTIMIZED(addWeighted8u), (BinaryFunc)GET_OPTIMIZED(addWeighted8s), (BinaryFunc)GET_OPTIMIZED(addWeighted16u),
+    (BinaryFunc)GET_OPTIMIZED(addWeighted16s), (BinaryFunc)GET_OPTIMIZED(addWeighted32s), (BinaryFunc)addWeighted32f,
     (BinaryFunc)addWeighted64f, 0
 };
 
@@ -2011,6 +2025,7 @@ cmp_(const T* src1, size_t step1, const T* src2, size_t step2,
         for( ; size.height--; src1 += step1, src2 += step2, dst += step )
         {
             int x = 0;
+			#if CV_ENABLE_UNROLLED
             for( ; x <= size.width - 4; x += 4 )
             {
                 int t0, t1;
@@ -2021,10 +2036,10 @@ cmp_(const T* src1, size_t step1, const T* src2, size_t step2,
                 t1 = -(src1[x+3] > src2[x+3]) ^ m;
                 dst[x+2] = (uchar)t0; dst[x+3] = (uchar)t1;
             }
-
+            #endif
             for( ; x < size.width; x++ )
                 dst[x] = (uchar)(-(src1[x] > src2[x]) ^ m);
-        }
+			   }
     }
     else if( code == CMP_EQ || code == CMP_NE )
     {
@@ -2032,6 +2047,7 @@ cmp_(const T* src1, size_t step1, const T* src2, size_t step2,
         for( ; size.height--; src1 += step1, src2 += step2, dst += step )
         {
             int x = 0;
+			#if CV_ENABLE_UNROLLED
             for( ; x <= size.width - 4; x += 4 )
             {
                 int t0, t1;
@@ -2042,7 +2058,7 @@ cmp_(const T* src1, size_t step1, const T* src2, size_t step2,
                 t1 = -(src1[x+3] == src2[x+3]) ^ m;
                 dst[x+2] = (uchar)t0; dst[x+3] = (uchar)t1;
             }
-
+            #endif
             for( ; x < size.width; x++ )
                 dst[x] = (uchar)(-(src1[x] == src2[x]) ^ m);
         }
@@ -2053,7 +2069,69 @@ cmp_(const T* src1, size_t step1, const T* src2, size_t step2,
 static void cmp8u(const uchar* src1, size_t step1, const uchar* src2, size_t step2,
                   uchar* dst, size_t step, Size size, void* _cmpop)
 {
-    cmp_(src1, step1, src2, step2, dst, step, size, *(int*)_cmpop);
+  //vz optimized  cmp_(src1, step1, src2, step2, dst, step, size, *(int*)_cmpop);
+	int code = *(int*)_cmpop;
+    step1 /= sizeof(src1[0]);
+    step2 /= sizeof(src2[0]);
+    if( code == CMP_GE || code == CMP_LT )
+    {
+        std::swap(src1, src2);
+        std::swap(step1, step2);
+        code = code == CMP_GE ? CMP_LE : CMP_GT;
+    }
+
+    if( code == CMP_GT || code == CMP_LE )
+    {
+        int m = code == CMP_GT ? 0 : 255;
+        for( ; size.height--; src1 += step1, src2 += step2, dst += step )
+        {
+            int x =0;
+		    #if CV_SSE2
+		    if( USE_SSE2 ){
+                __m128i m128 = code == CMP_GT ? _mm_setzero_si128() : _mm_set1_epi8 (-1);
+                __m128i c128 = _mm_set1_epi8 (-128);
+				for( ; x <= size.width - 16; x += 16 )
+				{
+					__m128i r00 = _mm_loadu_si128((const __m128i*)(src1 + x));
+					__m128i r10 = _mm_loadu_si128((const __m128i*)(src2 + x));
+					// no simd for 8u comparison, that's why we need the trick
+					r00 = _mm_sub_epi8(r00,c128);
+					r10 = _mm_sub_epi8(r10,c128);
+
+					r00 =_mm_xor_si128(_mm_cmpgt_epi8(r00, r10), m128);
+					_mm_storeu_si128((__m128i*)(dst + x),r00);
+				
+				} 
+			}
+           #endif
+
+			for( ; x < size.width; x++ ){
+                dst[x] = (uchar)(-(src1[x] > src2[x]) ^ m);
+			}
+        }
+    }
+    else if( code == CMP_EQ || code == CMP_NE )
+    {
+        int m = code == CMP_EQ ? 0 : 255;
+		for( ; size.height--; src1 += step1, src2 += step2, dst += step )
+        {
+            int x = 0;
+		    #if CV_SSE2
+		    if( USE_SSE2 ){
+                __m128i m128 =  code == CMP_EQ ? _mm_setzero_si128() : _mm_set1_epi8 (-1);
+				for( ; x <= size.width - 16; x += 16 )
+				{
+					__m128i r00 = _mm_loadu_si128((const __m128i*)(src1 + x));
+					__m128i r10 = _mm_loadu_si128((const __m128i*)(src2 + x));
+					r00 = _mm_xor_si128 ( _mm_cmpeq_epi8 (r00, r10), m128);
+					_mm_storeu_si128((__m128i*)(dst + x), r00);
+				} 
+			}
+           #endif
+           for( ; x < size.width; x++ )
+                dst[x] = (uchar)(-(src1[x] == src2[x]) ^ m);
+        }
+    }
 }
 
 static void cmp8s(const schar* src1, size_t step1, const schar* src2, size_t step2,
@@ -2071,7 +2149,92 @@ static void cmp16u(const ushort* src1, size_t step1, const ushort* src2, size_t 
 static void cmp16s(const short* src1, size_t step1, const short* src2, size_t step2,
                   uchar* dst, size_t step, Size size, void* _cmpop)
 {
-    cmp_(src1, step1, src2, step2, dst, step, size, *(int*)_cmpop);
+   //vz optimized cmp_(src1, step1, src2, step2, dst, step, size, *(int*)_cmpop);
+
+	int code = *(int*)_cmpop;
+    step1 /= sizeof(src1[0]);
+    step2 /= sizeof(src2[0]);
+    if( code == CMP_GE || code == CMP_LT )
+    {
+        std::swap(src1, src2);
+        std::swap(step1, step2);
+        code = code == CMP_GE ? CMP_LE : CMP_GT;
+    }
+
+    if( code == CMP_GT || code == CMP_LE )
+    {
+        int m = code == CMP_GT ? 0 : 255;
+        for( ; size.height--; src1 += step1, src2 += step2, dst += step )
+        {
+            int x =0;
+		    #if CV_SSE2
+		    if( USE_SSE2){//
+                __m128i m128 =  code == CMP_GT ? _mm_setzero_si128() : _mm_set1_epi16 (-1);
+				for( ; x <= size.width - 16; x += 16 )
+				{
+					__m128i r00 = _mm_loadu_si128((const __m128i*)(src1 + x));
+					__m128i r10 = _mm_loadu_si128((const __m128i*)(src2 + x));
+					r00 = _mm_xor_si128 ( _mm_cmpgt_epi16 (r00, r10), m128);
+					__m128i r01 = _mm_loadu_si128((const __m128i*)(src1 + x + 8));
+					__m128i r11 = _mm_loadu_si128((const __m128i*)(src2 + x + 8));
+					r01 = _mm_xor_si128 ( _mm_cmpgt_epi16 (r01, r11), m128);
+					r11 = _mm_packs_epi16(r00, r01);
+					_mm_storeu_si128((__m128i*)(dst + x), r11);
+				} 
+				if( x <= size.width-8) 
+				{
+					__m128i r00 = _mm_loadu_si128((const __m128i*)(src1 + x));
+					__m128i r10 = _mm_loadu_si128((const __m128i*)(src2 + x));
+					r00 = _mm_xor_si128 ( _mm_cmpgt_epi16 (r00, r10), m128);
+					r10 = _mm_packs_epi16(r00, r00);
+					_mm_storel_epi64((__m128i*)(dst + x), r10);
+
+					x += 8;
+				}
+			}
+           #endif
+
+			for( ; x < size.width; x++ ){
+                 dst[x] = (uchar)(-(src1[x] > src2[x]) ^ m);
+			}
+        }
+    }
+    else if( code == CMP_EQ || code == CMP_NE )
+    {
+        int m = code == CMP_EQ ? 0 : 255;
+		for( ; size.height--; src1 += step1, src2 += step2, dst += step )
+        {
+            int x = 0;
+		    #if CV_SSE2
+		    if( USE_SSE2 ){
+                __m128i m128 =  code == CMP_EQ ? _mm_setzero_si128() : _mm_set1_epi16 (-1);
+				for( ; x <= size.width - 16; x += 16 )
+				{
+					__m128i r00 = _mm_loadu_si128((const __m128i*)(src1 + x));
+					__m128i r10 = _mm_loadu_si128((const __m128i*)(src2 + x));
+					r00 = _mm_xor_si128 ( _mm_cmpeq_epi16 (r00, r10), m128);
+					__m128i r01 = _mm_loadu_si128((const __m128i*)(src1 + x + 8));
+					__m128i r11 = _mm_loadu_si128((const __m128i*)(src2 + x + 8));
+					r01 = _mm_xor_si128 ( _mm_cmpeq_epi16 (r01, r11), m128);
+					r11 = _mm_packs_epi16(r00, r01);
+					_mm_storeu_si128((__m128i*)(dst + x), r11);
+				} 
+				if( x <= size.width - 8) 
+				{
+					__m128i r00 = _mm_loadu_si128((const __m128i*)(src1 + x));
+					__m128i r10 = _mm_loadu_si128((const __m128i*)(src2 + x));
+					r00 = _mm_xor_si128 ( _mm_cmpeq_epi16 (r00, r10), m128);
+					r10 = _mm_packs_epi16(r00, r00);
+					_mm_storel_epi64((__m128i*)(dst + x), r10);
+
+					x += 8;
+				}
+			}
+           #endif
+           for( ; x < size.width; x++ )
+                dst[x] = (uchar)(-(src1[x] == src2[x]) ^ m);
+        }
+    }
 }
 
 static void cmp32s(const int* src1, size_t step1, const int* src2, size_t step2,
@@ -2094,9 +2257,11 @@ static void cmp64f(const double* src1, size_t step1, const double* src2, size_t 
 
 static BinaryFunc cmpTab[] =
 {
-    (BinaryFunc)cmp8u, (BinaryFunc)cmp8s, (BinaryFunc)cmp16u,
-    (BinaryFunc)cmp16s, (BinaryFunc)cmp32s, (BinaryFunc)cmp32f,
-    (BinaryFunc)cmp64f, 0
+    (BinaryFunc)GET_OPTIMIZED(cmp8u), (BinaryFunc)GET_OPTIMIZED(cmp8s),
+    (BinaryFunc)GET_OPTIMIZED(cmp16u), (BinaryFunc)GET_OPTIMIZED(cmp16s),
+    (BinaryFunc)GET_OPTIMIZED(cmp32s),
+    (BinaryFunc)GET_OPTIMIZED(cmp32f), (BinaryFunc)cmp64f,
+    0
 };
 
 
@@ -2250,6 +2415,7 @@ inRange_(const T* src1, size_t step1, const T* src2, size_t step2,
     for( ; size.height--; src1 += step1, src2 += step2, src3 += step3, dst += step )
     {
         int x = 0;
+		#if CV_ENABLE_UNROLLED
         for( ; x <= size.width - 4; x += 4 )
         {
             int t0, t1;
@@ -2260,7 +2426,7 @@ inRange_(const T* src1, size_t step1, const T* src2, size_t step2,
             t1 = src2[x+3] <= src1[x+3] && src1[x+3] <= src3[x+3];
             dst[x+2] = (uchar)-t0; dst[x+3] = (uchar)-t1;
         }
-
+        #endif
         for( ; x < size.width; x++ )
             dst[x] = (uchar)-(src2[x] <= src1[x] && src1[x] <= src3[x]);
     }
@@ -2338,8 +2504,8 @@ typedef void (*InRangeFunc)( const uchar* src1, size_t step1, const uchar* src2,
 
 static InRangeFunc inRangeTab[] =
 {
-    (InRangeFunc)inRange8u, (InRangeFunc)inRange8s, (InRangeFunc)inRange16u,
-    (InRangeFunc)inRange16s, (InRangeFunc)inRange32s, (InRangeFunc)inRange32f,
+    (InRangeFunc)GET_OPTIMIZED(inRange8u), (InRangeFunc)GET_OPTIMIZED(inRange8s), (InRangeFunc)GET_OPTIMIZED(inRange16u),
+    (InRangeFunc)GET_OPTIMIZED(inRange16s), (InRangeFunc)GET_OPTIMIZED(inRange32s), (InRangeFunc)GET_OPTIMIZED(inRange32f),
     (InRangeFunc)inRange64f, 0
 };
 

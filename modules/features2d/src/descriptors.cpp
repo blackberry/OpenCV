@@ -63,7 +63,6 @@ void DescriptorExtractor::compute( const Mat& image, vector<KeyPoint>& keypoints
         return;
     }
 
-
     KeyPointsFilter::runByImageBorder( keypoints, image.size(), 0 );
     KeyPointsFilter::runByKeypointSize( keypoints, std::numeric_limits<float>::epsilon() );
 
@@ -78,11 +77,11 @@ void DescriptorExtractor::compute( const vector<Mat>& imageCollection, vector<ve
         compute( imageCollection[i], pointCollection[i], descCollection[i] );
 }
 
-void DescriptorExtractor::read( const FileNode& )
+/*void DescriptorExtractor::read( const FileNode& )
 {}
 
 void DescriptorExtractor::write( FileStorage& ) const
-{}
+{}*/
 
 bool DescriptorExtractor::empty() const
 {
@@ -97,186 +96,17 @@ void DescriptorExtractor::removeBorderKeypoints( vector<KeyPoint>& keypoints,
 
 Ptr<DescriptorExtractor> DescriptorExtractor::create(const string& descriptorExtractorType)
 {
-    DescriptorExtractor* de = 0;
-
-    size_t pos = 0;
-    if (!descriptorExtractorType.compare("SIFT"))
+    if( descriptorExtractorType.find("Opponent") == 0 )
     {
-        de = new SiftDescriptorExtractor();
+        size_t pos = string("Opponent").size();
+        string type = descriptorExtractorType.substr(pos);
+        return new OpponentColorDescriptorExtractor(DescriptorExtractor::create(type));
     }
-    else if (!descriptorExtractorType.compare("SURF"))
-    {
-        de = new SurfDescriptorExtractor();
-    }
-    else if (!descriptorExtractorType.compare("ORB"))
-    {
-        de = new OrbDescriptorExtractor();
-    }
-    else if (!descriptorExtractorType.compare("BRIEF"))
-    {
-        de = new BriefDescriptorExtractor();
-    }
-    else if ( (pos=descriptorExtractorType.find("Opponent")) == 0)
-    {
-        pos += string("Opponent").size();
-        de = new OpponentColorDescriptorExtractor( DescriptorExtractor::create(descriptorExtractorType.substr(pos)) );
-    }
-    return de;
+    
+    return Algorithm::create<DescriptorExtractor>("Feature2D." + descriptorExtractorType);
 }
 
-/****************************************************************************************\
-*                                SiftDescriptorExtractor                                 *
-\****************************************************************************************/
-SiftDescriptorExtractor::SiftDescriptorExtractor(const SIFT::DescriptorParams& descriptorParams,
-                                                 const SIFT::CommonParams& commonParams)
-    : sift( descriptorParams.magnification, descriptorParams.isNormalize, descriptorParams.recalculateAngles,
-            commonParams.nOctaves, commonParams.nOctaveLayers, commonParams.firstOctave, commonParams.angleMode )
-{}
-
-SiftDescriptorExtractor::SiftDescriptorExtractor( double magnification, bool isNormalize, bool recalculateAngles,
-                                                  int nOctaves, int nOctaveLayers, int firstOctave, int angleMode )
-    : sift( magnification, isNormalize, recalculateAngles, nOctaves, nOctaveLayers, firstOctave, angleMode )
-{}
-
-void SiftDescriptorExtractor::computeImpl( const Mat& image,
-										   vector<KeyPoint>& keypoints,
-										   Mat& descriptors) const
-{
-    bool useProvidedKeypoints = true;
-    Mat grayImage = image;
-    if( image.type() != CV_8U ) cvtColor( image, grayImage, CV_BGR2GRAY );
-
-    sift(grayImage, Mat(), keypoints, descriptors, useProvidedKeypoints);
-}
-
-void SiftDescriptorExtractor::read (const FileNode &fn)
-{
-    double magnification = fn["magnification"];
-    bool isNormalize = (int)fn["isNormalize"] != 0;
-    bool recalculateAngles = (int)fn["recalculateAngles"] != 0;
-    int nOctaves = fn["nOctaves"];
-    int nOctaveLayers = fn["nOctaveLayers"];
-    int firstOctave = fn["firstOctave"];
-    int angleMode = fn["angleMode"];
-
-    sift = SIFT( magnification, isNormalize, recalculateAngles, nOctaves, nOctaveLayers, firstOctave, angleMode );
-}
-
-void SiftDescriptorExtractor::write (FileStorage &fs) const
-{
-//    fs << "algorithm" << getAlgorithmName ();
-
-    SIFT::CommonParams commParams = sift.getCommonParams ();
-    SIFT::DescriptorParams descriptorParams = sift.getDescriptorParams ();
-    fs << "magnification" << descriptorParams.magnification;
-    fs << "isNormalize" << descriptorParams.isNormalize;
-    fs << "recalculateAngles" << descriptorParams.recalculateAngles;
-    fs << "nOctaves" << commParams.nOctaves;
-    fs << "nOctaveLayers" << commParams.nOctaveLayers;
-    fs << "firstOctave" << commParams.firstOctave;
-    fs << "angleMode" << commParams.angleMode;
-}
-
-int SiftDescriptorExtractor::descriptorSize() const
-{
-    return sift.descriptorSize();
-}
-
-int SiftDescriptorExtractor::descriptorType() const
-{
-    return CV_32FC1;
-}
-
-/****************************************************************************************\
-*                                SurfDescriptorExtractor                                 *
-\****************************************************************************************/
-SurfDescriptorExtractor::SurfDescriptorExtractor( int nOctaves,
-                                                  int nOctaveLayers, bool extended, bool upright )
-    : surf( 0.0, nOctaves, nOctaveLayers, extended, upright )
-{}
-
-void SurfDescriptorExtractor::computeImpl( const Mat& image,
-                                           vector<KeyPoint>& keypoints,
-                                           Mat& descriptors) const
-{
-    // Compute descriptors for given keypoints
-    vector<float> _descriptors;
-    Mat mask;
-    bool useProvidedKeypoints = true;
-    Mat grayImage = image;
-    if( image.type() != CV_8U ) cvtColor( image, grayImage, CV_BGR2GRAY );
-
-    surf(grayImage, mask, keypoints, _descriptors, useProvidedKeypoints);
-
-    descriptors.create((int)keypoints.size(), (int)surf.descriptorSize(), CV_32FC1);
-    assert( (int)_descriptors.size() == descriptors.rows * descriptors.cols );
-    std::copy(_descriptors.begin(), _descriptors.end(), descriptors.begin<float>());
-}
-
-void SurfDescriptorExtractor::read( const FileNode &fn )
-{
-    int nOctaves = fn["nOctaves"];
-    int nOctaveLayers = fn["nOctaveLayers"];
-    bool extended = (int)fn["extended"] != 0;
-    bool upright = (int)fn["upright"] != 0;
-
-    surf = SURF( 0.0, nOctaves, nOctaveLayers, extended, upright );
-}
-
-void SurfDescriptorExtractor::write( FileStorage &fs ) const
-{
-//    fs << "algorithm" << getAlgorithmName ();
-
-    fs << "nOctaves" << surf.nOctaves;
-    fs << "nOctaveLayers" << surf.nOctaveLayers;
-    fs << "extended" << surf.extended;
-    fs << "upright" << surf.upright;
-}
-
-int SurfDescriptorExtractor::descriptorSize() const
-{
-    return surf.descriptorSize();
-}
-
-int SurfDescriptorExtractor::descriptorType() const
-{
-    return CV_32FC1;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-/** Default constructor */
-OrbDescriptorExtractor::OrbDescriptorExtractor(ORB::CommonParams params) :
-  params_(params)
-{
-  orb_ = ORB(0, params);
-}
-void OrbDescriptorExtractor::computeImpl(const cv::Mat& image, std::vector<cv::KeyPoint>& keypoints,
-                                         cv::Mat& descriptors) const
-{
-  cv::Mat empty_mask;
-  orb_(image, empty_mask, keypoints, descriptors, true);
-}
-void OrbDescriptorExtractor::read(const cv::FileNode& fn)
-{
-  params_.read(fn);
-  orb_ = ORB(0, params_);
-}
-void OrbDescriptorExtractor::write(cv::FileStorage& fs) const
-{
-  params_.write(fs);
-}
-int OrbDescriptorExtractor::descriptorSize() const
-{
-  return ORB::kBytes;
-}
-int OrbDescriptorExtractor::descriptorType() const
-{
-  return CV_8UC1;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /****************************************************************************************\
 *                             OpponentColorDescriptorExtractor                           *
@@ -402,9 +232,9 @@ void OpponentColorDescriptorExtractor::computeImpl( const Mat& bgrImage, vector<
            cp[1] < channelKeypoints[1].size() &&
            cp[2] < channelKeypoints[2].size() )
     {
-        const int maxInitIdx = std::max( channelKeypoints[0][idxs[0][cp[0]]].class_id,
-                                         std::max( channelKeypoints[1][idxs[1][cp[1]]].class_id,
-                                                   channelKeypoints[2][idxs[2][cp[2]]].class_id ) );
+        const int maxInitIdx = std::max( 0, std::max( channelKeypoints[0][idxs[0][cp[0]]].class_id,
+                                                      std::max( channelKeypoints[1][idxs[1][cp[1]]].class_id,
+                                                                channelKeypoints[2][idxs[2][cp[2]]].class_id ) ) );
 
         while( channelKeypoints[0][idxs[0][cp[0]]].class_id < maxInitIdx && cp[0] < channelKeypoints[0].size() ) { cp[0]++; }
         while( channelKeypoints[1][idxs[1][cp[1]]].class_id < maxInitIdx && cp[1] < channelKeypoints[1].size() ) { cp[1]++; }

@@ -11,13 +11,14 @@ Calculates all of the moments up to the third order of a polygon or rasterized s
 
 .. ocv:pyfunction:: cv2.moments(array[, binaryImage]) -> retval
 
-.. ocv:cfunction:: void cvMoments( const CvArr* array, CvMoments* moments, int binary=0 )
-.. ocv:pyoldfunction:: cv.Moments(array, binary=0) -> moments
+.. ocv:cfunction:: void cvMoments( const CvArr* arr, CvMoments* moments, int binary=0 )
+
+.. ocv:pyoldfunction:: cv.Moments(arr, binary=0) -> moments
 
     :param array: Raster image (single-channel, 8-bit or floating-point 2D array) or an array ( :math:`1 \times N`  or  :math:`N \times 1` ) of 2D points (``Point``  or  ``Point2f`` ).
 
     :param binaryImage: If it is true, all non-zero image pixels are treated as 1's. The parameter is used for images only.
-    
+
     :param moments: Output moments.
 
 The function computes moments, up to the 3rd order, of a vector shape or a rasterized shape. The results are returned in the structure ``Moments`` defined as: ::
@@ -30,6 +31,14 @@ The function computes moments, up to the 3rd order, of a vector shape or a raste
                 double m02, double m30, double m21, double m12, double m03 );
         Moments( const CvMoments& moments );
         operator CvMoments() const;
+
+        // spatial moments
+        double  m00, m10, m01, m20, m11, m02, m30, m21, m12, m03;
+        // central moments
+        double  mu20, mu11, mu02, mu30, mu21, mu12, mu03;
+        // central normalized moments
+        double  nu20, nu11, nu02, nu30, nu21, nu12, nu03;
+    }
 
 In case of a raster image, the spatial moments :math:`\texttt{Moments::m}_{ji}` are computed as:
 
@@ -61,10 +70,14 @@ The normalized central moments
 .. note::
 
     :math:`\texttt{mu}_{00}=\texttt{m}_{00}`,
-    :math:`\texttt{nu}_{00}=1` 
+    :math:`\texttt{nu}_{00}=1`
     :math:`\texttt{nu}_{10}=\texttt{mu}_{10}=\texttt{mu}_{01}=\texttt{mu}_{10}=0` , hence the values are not stored.
 
 The moments of a contour are defined in the same way but computed using the Green's formula (see http://en.wikipedia.org/wiki/Green_theorem). So, due to a limited raster resolution, the moments computed for a contour are slightly different from the moments computed for the same rasterized contour.
+
+.. note::
+
+     Since the contour moments are computed using Green formula, you may get seemingly odd results for contours with self-intersections, e.g. a zero area (``m00``) for butterfly-shaped contours.
 
 .. seealso::
 
@@ -77,11 +90,13 @@ HuMoments
 -------------
 Calculates seven Hu invariants.
 
-.. ocv:function:: void HuMoments( const Moments& moments, double* hu )
+.. ocv:function:: void HuMoments( const Moments& m, OutputArray hu )
 
-.. ocv:pyfunction:: cv2.HuMoments(m) -> hu
+.. ocv:function:: void HuMoments( const Moments& moments, double hu[7] )
 
-.. ocv:cfunction:: void cvGetHuMoments( const CvMoments* moments, CvHuMoments* hu )
+.. ocv:pyfunction:: cv2.HuMoments(m[, hu]) -> hu
+
+.. ocv:cfunction:: void cvGetHuMoments( CvMoments* moments, CvHuMoments* hu_moments )
 
 .. ocv:pyoldfunction:: cv.GetHuMoments(moments) -> hu
 
@@ -108,20 +123,23 @@ findContours
 ----------------
 Finds contours in a binary image.
 
-.. ocv:function:: void findContours( InputOutputArray image, OutputArrayOfArrays contours,                   OutputArray hierarchy, int mode, int method, Point offset=Point())
+.. ocv:function:: void findContours( InputOutputArray image, OutputArrayOfArrays contours, OutputArray hierarchy, int mode, int method, Point offset=Point())
 
 .. ocv:function:: void findContours( InputOutputArray image, OutputArrayOfArrays contours, int mode, int method, Point offset=Point())
 
-.. ocv:cfunction:: int cvFindContours( CvArr* image, CvMemStorage* storage, CvSeq** firstContour, int headerSize=sizeof(CvContour), int mode=CV_RETR_LIST, int method=CV_CHAIN_APPROX_SIMPLE, CvPoint offset=cvPoint(0, 0) )
-.. ocv:pyoldfunction:: cv.FindContours(image, storage, mode=CV_RETR_LIST, method=CV_CHAIN_APPROX_SIMPLE, offset=(0, 0)) -> cvseq
+.. ocv:pyfunction:: cv2.findContours(image, mode, method[, contours[, hierarchy[, offset]]]) -> contours, hierarchy
+
+.. ocv:cfunction:: int cvFindContours( CvArr* image, CvMemStorage* storage, CvSeq** first_contour, int header_size=sizeof(CvContour), int mode=CV_RETR_LIST, int method=CV_CHAIN_APPROX_SIMPLE, CvPoint offset=cvPoint(0,0) )
+
+.. ocv:pyoldfunction:: cv.FindContours(image, storage, mode=CV_RETR_LIST, method=CV_CHAIN_APPROX_SIMPLE, offset=(0, 0)) -> contours
 
     :param image: Source, an 8-bit single-channel image. Non-zero pixels are treated as 1's. Zero pixels remain 0's, so the image is treated as  ``binary`` . You can use  :ocv:func:`compare` ,  :ocv:func:`inRange` ,  :ocv:func:`threshold` ,  :ocv:func:`adaptiveThreshold` ,  :ocv:func:`Canny` , and others to create a binary image out of a grayscale or color one. The function modifies the  ``image``  while extracting the contours.
 
     :param contours: Detected contours. Each contour is stored as a vector of points.
 
-    :param hiararchy: Optional output vector containing information about the image topology. It has as many elements as the number of contours. For each contour  ``contours[i]`` , the elements  ``hierarchy[i][0]`` ,  ``hiearchy[i][1]`` ,  ``hiearchy[i][2]`` , and  ``hiearchy[i][3]``  are set to 0-based indices in  ``contours``  of the next and previous contours at the same hierarchical level: the first child contour and the parent contour, respectively. If for a contour  ``i``  there are no next, previous, parent, or nested contours, the corresponding elements of  ``hierarchy[i]``  will be negative.
+    :param hierarchy: Optional output vector containing information about the image topology. It has as many elements as the number of contours. For each contour  ``contours[i]`` , the elements  ``hierarchy[i][0]`` ,  ``hiearchy[i][1]`` ,  ``hiearchy[i][2]`` , and  ``hiearchy[i][3]``  are set to 0-based indices in  ``contours``  of the next and previous contours at the same hierarchical level: the first child contour and the parent contour, respectively. If for a contour  ``i``  there are no next, previous, parent, or nested contours, the corresponding elements of  ``hierarchy[i]``  will be negative.
 
-    :param mode: Contour retrieval mode.
+    :param mode: Contour retrieval mode (if you use Python see also a note below).
 
             * **CV_RETR_EXTERNAL** retrieves only the extreme outer contours. It sets  ``hierarchy[i][2]=hierarchy[i][3]=-1``  for all the contours.
 
@@ -131,7 +149,7 @@ Finds contours in a binary image.
 
             * **CV_RETR_TREE** retrieves all of the contours and reconstructs a full hierarchy of nested contours. This full hierarchy is built and shown in the OpenCV  ``contours.c``  demo.
 
-    :param method: Contour approximation method.
+    :param method: Contour approximation method (if you use Python see also a note below).
 
             * **CV_CHAIN_APPROX_NONE** stores absolutely all the contour points. That is, any 2 subsequent points ``(x1,y1)`` and ``(x2,y2)`` of the contour will be either horizontal, vertical or diagonal neighbors, that is, ``max(abs(x1-x2),abs(y2-y1))==1``.
 
@@ -146,81 +164,7 @@ The function retrieves contours from the binary image using the algorithm
 
 .. note:: Source ``image`` is modified by this function.
 
-
-drawContours
-----------------
-Draws contours outlines or filled contours.
-
-.. ocv:function:: void drawContours( InputOutputArray image, InputArrayOfArrays contours,                   int contourIdx, const Scalar& color, int thickness=1, int lineType=8, InputArray hierarchy=noArray(), int maxLevel=INT_MAX, Point offset=Point() )
-
-.. ocv:pyfunction:: cv2.drawContours(image, contours, contourIdx, color[, thickness[, lineType[, hierarchy[, maxLevel[, offset]]]]]) -> None
-
-.. ocv:cfunction:: void cvDrawContours( CvArr *img, CvSeq* contour, CvScalar externalColor, CvScalar holeColor, int maxLevel, int thickness=1, int lineType=8 )
-.. ocv:pyoldfunction:: cv.DrawContours(img, contour, externalColor, holeColor, maxLevel, thickness=1, lineType=8, offset=(0, 0))-> None
-
-    :param image: Destination image.
-
-    :param contours: All the input contours. Each contour is stored as a point vector.
-
-    :param contourIdx: Parameter indicating a contour to draw. If it is negative, all the contours are drawn.
-
-    :param color: Color of the contours.
-    
-    :param thickness: Thickness of lines the contours are drawn with. If it is negative (for example,  ``thickness=CV_FILLED`` ), the contour interiors are
-        drawn.
-
-    :param lineType: Line connectivity. See  :ocv:func:`line`  for details.
-
-    :param hierarchy: Optional information about hierarchy. It is only needed if you want to draw only some of the  contours (see  ``maxLevel`` ).
-
-    :param maxLevel: Maximal level for drawn contours. If it is 0, only
-        the specified contour is drawn. If it is 1, the function draws the contour(s) and all the nested contours. If it is 2, the function draws the contours, all the nested contours, all the nested-to-nested contours, and so on. This parameter is only taken into account when there is  ``hierarchy``  available.
-
-    :param offset: Optional contour shift parameter. Shift all the drawn contours by the specified  :math:`\texttt{offset}=(dx,dy)` .
-
-The function draws contour outlines in the image if
-:math:`\texttt{thickness} \ge 0` or fills the area bounded by the contours if
-:math:`\texttt{thickness}<0` . The example below shows how to retrieve connected components from the binary image and label them: ::
-
-    #include "cv.h"
-    #include "highgui.h"
-
-    using namespace cv;
-
-    int main( int argc, char** argv )
-    {
-        Mat src;
-        // the first command-line parameter must be a filename of the binary
-        // (black-n-white) image
-        if( argc != 2 || !(src=imread(argv[1], 0)).data)
-            return -1;
-
-        Mat dst = Mat::zeros(src.rows, src.cols, CV_8UC3);
-
-        src = src > 1;
-        namedWindow( "Source", 1 );
-        imshow( "Source", src );
-
-        vector<vector<Point> > contours;
-        vector<Vec4i> hierarchy;
-
-        findContours( src, contours, hierarchy,
-            CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE );
-
-        // iterate through all the top-level contours,
-        // draw each connected component with its own random color
-        int idx = 0;
-        for( ; idx >= 0; idx = hierarchy[idx][0] )
-        {
-            Scalar color( rand()&255, rand()&255, rand()&255 );
-            drawContours( dst, contours, idx, color, CV_FILLED, 8, hierarchy );
-        }
-
-        namedWindow( "Components", 1 );
-        imshow( "Components", dst );
-        waitKey(0);
-    }
-
+.. note:: If you use the new Python interface then the ``CV_`` prefix has to be omitted in contour retrieval mode and contour approximation method parameters (for example, use ``cv2.RETR_LIST`` and ``cv2.CHAIN_APPROX_NONE`` parameters). If you use the old Python interface then these parameters have the ``CV_`` prefix (for example, use ``cv.CV_RETR_LIST`` and ``cv.CV_CHAIN_APPROX_NONE``).
 
 
 approxPolyDP
@@ -231,56 +175,56 @@ Approximates a polygonal curve(s) with the specified precision.
 
 .. ocv:pyfunction:: cv2.approxPolyDP(curve, epsilon, closed[, approxCurve]) -> approxCurve
 
-.. ocv:cfunction:: CvSeq* cvApproxPoly( const void* curve, int headerSize, CvMemStorage* storage, int method, double epsilon, int recursive=0 )
+.. ocv:cfunction:: CvSeq* cvApproxPoly( const void* src_seq, int header_size, CvMemStorage* storage, int method, double eps, int recursive=0 )
 
     :param curve: Input vector of a 2D point stored in:
-        
+
         * ``std::vector`` or ``Mat`` (C++ interface)
-        
+
         * ``Nx2`` numpy array (Python interface)
-        
-        * ``CvSeq`` or `` ``CvMat`` (C interface) 
+
+        * ``CvSeq`` or `` ``CvMat`` (C interface)
 
     :param approxCurve: Result of the approximation. The type should match the type of the input curve. In case of C interface the approximated curve is stored in the memory storage and pointer to it is returned.
 
     :param epsilon: Parameter specifying the approximation accuracy. This is the maximum distance between the original curve and its approximation.
 
     :param closed: If true, the approximated curve is closed (its first and last vertices are connected). Otherwise, it is not closed.
-    
-    :param headerSize: Header size of the approximated curve. Normally, ``sizeof(CvContour)`` is used.
-    
+
+    :param header_size: Header size of the approximated curve. Normally, ``sizeof(CvContour)`` is used.
+
     :param storage: Memory storage where the approximated curve is stored.
-    
+
     :param method: Contour approximation algorithm. Only ``CV_POLY_APPROX_DP`` is supported.
-    
+
     :param recursive: Recursion flag. If it is non-zero and ``curve`` is ``CvSeq*``, the function ``cvApproxPoly`` approximates all the contours accessible from ``curve`` by ``h_next`` and ``v_next`` links.
 
 The functions ``approxPolyDP`` approximate a curve or a polygon with another curve/polygon with less vertices so that the distance between them is less or equal to the specified precision. It uses the Douglas-Peucker algorithm
 http://en.wikipedia.org/wiki/Ramer-Douglas-Peucker_algorithm
 
-See http://code.ros.org/svn/opencv/trunk/opencv/samples/cpp/contours.cpp for the function usage model.
+See http://code.opencv.org/svn/opencv/trunk/opencv/samples/cpp/contours.cpp for the function usage model.
 
 
 ApproxChains
 -------------
 Approximates Freeman chain(s) with a polygonal curve.
 
-.. ocv:cfunction:: CvSeq* cvApproxChains( CvSeq* chain, CvMemStorage* storage, int method=CV_CHAIN_APPROX_SIMPLE, double parameter=0, int minimalPerimeter=0, int recursive=0 )
+.. ocv:cfunction:: CvSeq* cvApproxChains( CvSeq* src_seq, CvMemStorage* storage, int method=CV_CHAIN_APPROX_SIMPLE, double parameter=0, int minimal_perimeter=0, int recursive=0 )
 
-.. ocv:pyoldfunction:: cv.ApproxChains(chain, storage, method=CV_CHAIN_APPROX_SIMPLE, parameter=0, minimalPerimeter=0, recursive=0)-> contours
-    
-    :param chain: Pointer to the approximated Freeman chain that can refer to other chains.     
-    
-    :param storage: Storage location for the resulting polylines. 
-    
-    :param method: Approximation method (see the description of the function  :ocv:cfunc:`FindContours` ). 
-    
-    :param parameter: Method parameter (not used now). 
-    
-    :param minimalPerimeter: Approximates only those contours whose perimeters are not less than  ``minimal_perimeter`` . Other chains are removed from the resulting structure.   
-    
+.. ocv:pyoldfunction:: cv.ApproxChains(src_seq, storage, method=CV_CHAIN_APPROX_SIMPLE, parameter=0, minimal_perimeter=0, recursive=0)-> contours
+
+    :param src_seq: Pointer to the approximated Freeman chain that can refer to other chains.
+
+    :param storage: Storage location for the resulting polylines.
+
+    :param method: Approximation method (see the description of the function  :ocv:cfunc:`FindContours` ).
+
+    :param parameter: Method parameter (not used now).
+
+    :param minimal_perimeter: Approximates only those contours whose perimeters are not less than  ``minimal_perimeter`` . Other chains are removed from the resulting structure.
+
     :param recursive: Recursion flag. If it is non-zero, the function approximates all chains that can be obtained from  ``chain``  by using the  ``h_next``  or  ``v_next`` links. Otherwise, the single input chain is approximated.
-    
+
 This is a standalone contour approximation routine, not represented in the new interface. When :ocv:cfunc:`FindContours` retrieves contours as Freeman chains, it calls the function to get approximated contours, represented as polygons.
 
 
@@ -292,8 +236,9 @@ Calculates a contour perimeter or a curve length.
 
 .. ocv:pyfunction:: cv2.arcLength(curve, closed) -> retval
 
-.. ocv:cfunction:: double cvArcLength( const void* curve, CvSlice slice=CV_WHOLE_SEQ, int isClosed=-1 )
-.. ocv:pyoldfunction:: cv.ArcLength(curve, slice=CV_WHOLE_SEQ, isClosed=-1)-> double
+.. ocv:cfunction:: double cvArcLength( const void* curve, CvSlice slice=CV_WHOLE_SEQ, int is_closed=-1 )
+
+.. ocv:pyoldfunction:: cv.ArcLength(curve, slice=CV_WHOLE_SEQ, isClosed=-1) -> float
 
     :param curve: Input vector of 2D points, stored in ``std::vector`` or ``Mat``.
 
@@ -329,16 +274,19 @@ Calculates a contour area.
 
 .. ocv:pyfunction:: cv2.contourArea(contour[, oriented]) -> retval
 
-.. ocv:cfunction:: double cvContourArea( const CvArr* contour, CvSlice slice=CV_WHOLE_SEQ )
-.. ocv:pyoldfunction:: cv.ContourArea(contour, slice=CV_WHOLE_SEQ)-> double
+.. ocv:cfunction:: double cvContourArea( const CvArr* contour, CvSlice slice=CV_WHOLE_SEQ, int oriented=0 )
+
+.. ocv:pyoldfunction:: cv.ContourArea(contour, slice=CV_WHOLE_SEQ) -> float
 
     :param contour: Input vector of 2D points (contour vertices), stored in ``std::vector`` or ``Mat``.
-    :param orientation: Oriented area flag. If it is true, the function returns a signed area value, depending on the contour orientation (clockwise or counter-clockwise). Using this feature you can determine orientation of a contour by taking the sign of an area. By default, the parameter is ``false``, which means that the absolute value is returned.
+
+    :param oriented: Oriented area flag. If it is true, the function returns a signed area value, depending on the contour orientation (clockwise or counter-clockwise). Using this feature you can determine orientation of a contour by taking the sign of an area. By default, the parameter is ``false``, which means that the absolute value is returned.
 
 The function computes a contour area. Similarly to
 :ocv:func:`moments` , the area is computed using the Green formula. Thus, the returned area and the number of non-zero pixels, if you draw the contour using
 :ocv:func:`drawContours` or
 :ocv:func:`fillPoly` , can be different.
+Also, the function will most certainly give a wrong results for contours with self-intersections.
 
 Example: ::
 
@@ -365,22 +313,22 @@ Finds the convex hull of a point set.
 
 .. ocv:function:: void convexHull( InputArray points, OutputArray hull, bool clockwise=false, bool returnPoints=true )
 
-.. ocv:pyfunction:: cv2.convexHull(points[, hull[, returnPoints[, clockwise]]]) -> hull
+.. ocv:pyfunction:: cv2.convexHull(points[, hull[, clockwise[, returnPoints]]]) -> hull
 
-.. ocv:cfunction:: CvSeq* cvConvexHull2( const CvArr* input, void* storage=NULL, int orientation=CV_CLOCKWISE, int returnPoints=0 )
+.. ocv:cfunction:: CvSeq* cvConvexHull2( const CvArr* input, void* hull_storage=NULL, int orientation=CV_CLOCKWISE, int return_points=0 )
 
-.. ocv:pyoldfunction:: cv.ConvexHull2(points, storage, orientation=CV_CLOCKWISE, returnPoints=0)-> convexHull
+.. ocv:pyoldfunction:: cv.ConvexHull2(points, storage, orientation=CV_CLOCKWISE, return_points=0) -> convexHull
 
     :param points: Input 2D point set, stored in ``std::vector`` or ``Mat``.
 
-    :param hull: Output convex hull. It is either an integer vector of indices or vector of points. In the first case, the ``hull`` elements are 0-based indices of the convex hull points in the original array (since the set of convex hull points is a subset of the original point set). In the second case, ``hull`` elements aree the convex hull points themselves.
-    
-    :param storage: Output memory storage in the old API (``cvConvexHull2`` returns a sequence containing the convex hull points or their indices).
+    :param hull: Output convex hull. It is either an integer vector of indices or vector of points. In the first case, the ``hull`` elements are 0-based indices of the convex hull points in the original array (since the set of convex hull points is a subset of the original point set). In the second case, ``hull`` elements are the convex hull points themselves.
+
+    :param hull_storage: Output memory storage in the old API (``cvConvexHull2`` returns a sequence containing the convex hull points or their indices).
 
     :param clockwise: Orientation flag. If it is true, the output convex hull is oriented clockwise. Otherwise, it is oriented counter-clockwise. The usual screen coordinate system is assumed so that the origin is at the top-left corner, x axis is oriented to the right, and y axis is oriented downwards.
-    
+
     :param orientation: Convex hull orientation parameter in the old API, ``CV_CLOCKWISE`` or ``CV_COUNTERCLOCKWISE``.
-    
+
     :param returnPoints: Operation flag. In case of a matrix, when the flag is true, the function returns convex hull points. Otherwise, it returns indices of the convex hull points. When the output array is ``std::vector``, the flag is ignored, and the output depends on the type of the vector: ``std::vector<int>`` implies ``returnPoints=true``, ``std::vector<Point>`` implies ``returnPoints=false``.
 
 The functions find the convex hull of a 2D point set using the Sklansky's algorithm
@@ -389,20 +337,26 @@ that has
 *O(N logN)* complexity in the current implementation. See the OpenCV sample ``convexhull.cpp`` that demonstrates the usage of different function variants.
 
 
-ConvexityDefects
+convexityDefects
 ----------------
 Finds the convexity defects of a contour.
+
+.. ocv:function:: void convexityDefects( InputArray contour, InputArray convexhull, OutputArray convexityDefects )
+
+.. ocv:pyfunction:: cv2.convexityDefects(contour, convexhull[, convexityDefects]) -> convexityDefects
 
 .. ocv:cfunction:: CvSeq* cvConvexityDefects(  const CvArr* contour, const CvArr* convexhull, CvMemStorage* storage=NULL )
 
 .. ocv:pyoldfunction:: cv.ConvexityDefects(contour, convexhull, storage)-> convexityDefects
 
-    :param contour: Input contour. 
-    
-    :param convexhull: Convex hull obtained using  :ocv:cfunc:`ConvexHull2`  that should contain pointers or indices to the contour points, not the hull points themselves (the  ``returnPoints``  parameter in  :ocv:cfunc:`ConvexHull2`  should be zero). 
-    
-    :param storage: Container for the output sequence of convexity defects. If it is NULL, the contour or hull (in that order) storage is used. 
-    
+    :param contour: Input contour.
+
+    :param convexhull: Convex hull obtained using  :ocv:func:`convexHull`  that should contain indices of the contour points that make the hull.
+
+    :param convexityDefects: The output vector of convexity defects. In C++ and the new Python/Java interface each convexity defect is represented as 4-element integer vector (a.k.a. ``cv::Vec4i``): ``(start_index, end_index, farthest_pt_index, fixpt_depth)``, where indices are 0-based indices in the original contour of the convexity defect beginning, end and the farthest point, and ``fixpt_depth`` is fixed-point approximation (with 8 fractional bits) of the distance between the farthest contour point and the hull. That is, to get the floating-point value of the depth will be ``fixpt_depth/256.0``. In C interface convexity defect is represented by ``CvConvexityDefect`` structure - see below.
+
+    :param storage: Container for the output sequence of convexity defects. If it is NULL, the contour or hull (in that order) storage is used.
+
 The function finds all convexity defects of the input contour and returns a sequence of the ``CvConvexityDefect`` structures, where ``CvConvexityDetect`` is defined as: ::
 
      struct CvConvexityDefect
@@ -429,7 +383,7 @@ Fits an ellipse around a set of 2D points.
 .. ocv:pyoldfunction:: cv.FitEllipse2(points)-> Box2D
 
     :param points: Input 2D point set, stored in:
-    
+
         * ``std::vector<>`` or ``Mat`` (C++ interface)
 
         * ``CvSeq*`` or ``CvMat*`` (C interface)
@@ -444,10 +398,11 @@ Fits a line to a 2D or 3D point set.
 
 .. ocv:function:: void fitLine( InputArray points, OutputArray line, int distType, double param, double reps, double aeps )
 
-.. ocv:pyfunction:: cv2.fitLine(points, distType, param, reps, aeps) -> line
+.. ocv:pyfunction:: cv2.fitLine(points, distType, param, reps, aeps[, line]) -> line
 
-.. ocv:cfunction:: void cvFitLine( const CvArr* points, int distType, double param, double reps, double aeps, float* line )
-.. ocv:pyoldfunction:: cv.FitLine(points, distType, param, reps, aeps) -> line
+.. ocv:cfunction:: void cvFitLine( const CvArr* points, int dist_type, double param, double reps, double aeps, float* line )
+
+.. ocv:pyoldfunction:: cv.FitLine(points, dist_type, param, reps, aeps) -> line
 
     :param points: Input vector of 2D or 3D points, stored in ``std::vector<>`` or ``Mat``.
 
@@ -458,7 +413,7 @@ Fits a line to a 2D or 3D point set.
     :param param: Numerical parameter ( ``C`` ) for some types of distances. If it is 0, an optimal value is chosen.
 
     :param reps: Sufficient accuracy for the radius (distance between the coordinate origin and the line).
-    
+
     :param aeps: Sufficient accuracy for the angle. 0.01 would be a good default value for ``reps`` and ``aeps``.
 
 The function ``fitLine`` fits a line to a 2D or 3D point set by minimizing
@@ -523,7 +478,7 @@ Tests a contour convexity.
 .. ocv:pyoldfunction:: cv.CheckContourConvexity(contour)-> int
 
     :param contour: Input vector of 2D points, stored in:
-    
+
             * ``std::vector<>`` or ``Mat`` (C++ interface)
 
             * ``CvSeq*`` or ``CvMat*`` (C interface)
@@ -544,14 +499,14 @@ Finds a rotated rectangle of the minimum area enclosing the input 2D point set.
 
 .. ocv:cfunction:: CvBox2D cvMinAreaRect2( const CvArr* points, CvMemStorage* storage=NULL )
 
-.. ocv:pyoldfunction:: cv.MinAreaRect2(points, storage=None)-> CvBox2D
+.. ocv:pyoldfunction:: cv.MinAreaRect2(points, storage=None) -> Box2D
 
     :param points: Input vector of 2D points, stored in:
-    
+
         * ``std::vector<>`` or ``Mat`` (C++ interface)
-        
+
         * ``CvSeq*`` or ``CvMat*`` (C interface)
-        
+
         * Nx2 numpy array (Python interface)
 
 The function calculates and returns the minimum-area bounding rectangle (possibly rotated) for a specified point set. See the OpenCV sample ``minarea.cpp`` .
@@ -564,18 +519,18 @@ Finds a circle of the minimum area enclosing a 2D point set.
 
 .. ocv:function:: void minEnclosingCircle( InputArray points, Point2f& center, float& radius )
 
-.. ocv:pyfunction:: cv2.minEnclosingCircle(points, center, radius) -> None
+.. ocv:pyfunction:: cv2.minEnclosingCircle(points) -> center, radius
 
 .. ocv:cfunction:: int cvMinEnclosingCircle( const CvArr* points, CvPoint2D32f* center, float* radius )
 
 .. ocv:pyoldfunction:: cv.MinEnclosingCircle(points)-> (int, center, radius)
 
     :param points: Input vector of 2D points, stored in:
-    
+
         * ``std::vector<>`` or ``Mat`` (C++ interface)
-        
+
         * ``CvSeq*`` or ``CvMat*`` (C interface)
-        
+
         * Nx2 numpy array (Python interface)
 
     :param center: Output center of the circle.
@@ -590,18 +545,18 @@ matchShapes
 ---------------
 Compares two shapes.
 
-.. ocv:function:: double matchShapes( InputArray object1, InputArray object2, int method, double parameter=0 )
+.. ocv:function:: double matchShapes( InputArray contour1, InputArray contour2, int method, double parameter )
 
 .. ocv:pyfunction:: cv2.matchShapes(contour1, contour2, method, parameter) -> retval
 
 .. ocv:cfunction:: double cvMatchShapes( const void* object1, const void* object2, int method, double parameter=0 )
-.. ocv:pyoldfunction:: cv.MatchShapes(object1, object2, method, parameter=0)-> None
+.. ocv:pyoldfunction:: cv.MatchShapes(object1, object2, method, parameter=0) -> float
 
     :param object1: First contour or grayscale image.
 
     :param object2: Second contour or grayscale image.
 
-    :param method: Comparison method: ``CV_CONTOUR_MATCH_I1`` , \ ``CV_CONTOURS_MATCH_I2`` \
+    :param method: Comparison method: ``CV_CONTOURS_MATCH_I1`` , \ ``CV_CONTOURS_MATCH_I2`` \
         or ``CV_CONTOURS_MATCH_I3``  (see the details below).
 
     :param parameter: Method-specific parameter (not supported now).
@@ -610,23 +565,23 @@ The function compares two shapes. All three implemented methods use the Hu invar
 :ocv:func:`HuMoments` ) as follows (
 :math:`A` denotes ``object1``,:math:`B` denotes ``object2`` ):
 
-* method=CV\_CONTOUR\_MATCH\_I1
+* method=CV_CONTOURS_MATCH_I1
 
     .. math::
 
         I_1(A,B) =  \sum _{i=1...7}  \left |  \frac{1}{m^A_i} -  \frac{1}{m^B_i} \right |
 
-* method=CV\_CONTOUR\_MATCH\_I2
+* method=CV_CONTOURS_MATCH_I2
 
     .. math::
 
         I_2(A,B) =  \sum _{i=1...7}  \left | m^A_i - m^B_i  \right |
 
-* method=CV\_CONTOUR\_MATCH\_I3
+* method=CV_CONTOURS_MATCH_I3
 
     .. math::
 
-        I_3(A,B) =  \sum _{i=1...7}  \frac{ \left| m^A_i - m^B_i \right| }{ \left| m^A_i \right| }
+        I_3(A,B) =  \max _{i=1...7}  \frac{ \left| m^A_i - m^B_i \right| }{ \left| m^A_i \right| }
 
 where
 
@@ -649,8 +604,8 @@ Performs a point-in-contour test.
 
 .. ocv:pyfunction:: cv2.pointPolygonTest(contour, pt, measureDist) -> retval
 
-.. ocv:cfunction:: double cvPointPolygonTest( const CvArr* contour, CvPoint2D32f pt, int measureDist )
-.. ocv:pyoldfunction:: cv.PointPolygonTest(contour, pt, measureDist)-> double
+.. ocv:cfunction:: double cvPointPolygonTest( const CvArr* contour, CvPoint2D32f pt, int measure_dist )
+.. ocv:pyoldfunction:: cv.PointPolygonTest(contour, pt, measure_dist) -> float
 
     :param contour: Input contour.
 

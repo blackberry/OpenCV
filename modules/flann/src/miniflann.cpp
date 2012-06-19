@@ -7,20 +7,22 @@ static cvflann::IndexParams& get_params(const cv::flann::IndexParams& p)
     return *(cvflann::IndexParams*)(p.params);
 }
 
+cv::flann::IndexParams::~IndexParams()
+{
+    delete &get_params(*this);
+}
+
 namespace cv
 {
     
 namespace flann
 {
 
+using namespace cvflann;
+    
 IndexParams::IndexParams()
 {
     params = new ::cvflann::IndexParams();
-}
-    
-IndexParams::~IndexParams()
-{
-    delete &get_params(*this);
 }
 
 template<typename T>
@@ -310,7 +312,11 @@ buildIndex(void*& index, const Mat& data, const IndexParams& params, const Dista
     buildIndex_<Distance, ::cvflann::Index<Distance> >(index, data, params, dist);
 }
 
+#if CV_NEON
+typedef ::cvflann::Hamming<uchar> HammingDistance;
+#else
 typedef ::cvflann::HammingLUT HammingDistance;
+#endif
 typedef ::cvflann::LshIndex<HammingDistance> LshIndex;
 
 Index::Index()
@@ -644,6 +650,7 @@ void Index::save(const std::string& filename) const
     if( algo == FLANN_INDEX_LSH )
     {
         saveIndex_<LshIndex>(this, index, fout);
+        fclose(fout);
         return;
     }
     

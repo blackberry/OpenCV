@@ -69,7 +69,6 @@
 #undef max
 #else
 #include <pthread.h>
-#include <sys/mman.h>
 #endif
 
 #ifdef __BORLANDC__
@@ -113,13 +112,18 @@ CV_INLINE IppiSize ippiSize(int width, int height)
 #include "pmmintrin.h"
 #define CV_SSE3 1
 #endif
+#if defined __SSSE3__
+#include "tmmintrin.h"
+#define CV_SSSE3 1
+#endif
 #else
 #define CV_SSE 0
 #define CV_SSE2 0
 #define CV_SSE3 0
+#define CV_SSSE3 0
 #endif
 
-#if defined ANDROID && defined __ARM_NEON__
+#if defined ANDROID && defined __ARM_NEON__ && defined __GNUC__
 #include "arm_neon.h"
 #define CV_NEON 1
 
@@ -129,6 +133,12 @@ CV_INLINE IppiSize ippiSize(int width, int height)
 #else
 #define CV_NEON 0
 #define CPU_HAS_NEON_FEATURE (false)
+#endif
+
+#ifdef CV_ICC
+#define CV_ENABLE_UNROLLED 0
+#else
+#define CV_ENABLE_UNROLLED 1
 #endif
 
 #ifndef IPPI_CALL
@@ -198,18 +208,6 @@ CV_INLINE IppiSize ippiSize(int width, int height)
             int _begin, _end, _grainsize;
         };
 
-
-#ifdef HAVE_THREADING_FRAMEWORK 
-#include "threading_framework.hpp"
-
-        template<typename Body> 
-        static void parallel_for( const BlockedRange& range, const Body& body )
-        {
-            tf::parallel_for<Body>(range, body);
-        }
-        
-        typedef tf::ConcurrentVector<Rect> ConcurrentRectVector;
-#else
         template<typename Body> static inline
         void parallel_for( const BlockedRange& range, const Body& body )
         {
@@ -217,7 +215,6 @@ CV_INLINE IppiSize ippiSize(int width, int height)
         }
         typedef std::vector<Rect> ConcurrentRectVector;
         typedef std::vector<double> ConcurrentDoubleVector;
-#endif
         
         template<typename Iterator, typename Body> static inline
         void parallel_do( Iterator first, Iterator last, const Body& body )
@@ -236,6 +233,34 @@ CV_INLINE IppiSize ippiSize(int width, int height)
         
     }
 #endif
+
+    #define CV_INIT_ALGORITHM(classname, algname, memberinit) \
+    static Algorithm* create##classname() \
+    { \
+        return new classname; \
+    } \
+    \
+    static AlgorithmInfo& classname##_info() \
+    { \
+        static AlgorithmInfo classname##_info_var(algname, create##classname); \
+        return classname##_info_var; \
+    } \
+    \
+    static AlgorithmInfo& classname##_info_auto = classname##_info(); \
+    \
+    AlgorithmInfo* classname::info() const \
+    { \
+        static volatile bool initialized = false; \
+        \
+        if( !initialized ) \
+        { \
+            initialized = true; \
+            classname obj; \
+            memberinit; \
+        } \
+        return &classname##_info(); \
+    }
+
 #endif
 
 /* maximal size of vector to run matrix operations on it inline (i.e. w/o ipp calls) */
@@ -706,5 +731,37 @@ CvBigFuncTable;
     (tab).fn_2d[CV_32S] = (void*)FUNCNAME##_32s##FLAG;  \
     (tab).fn_2d[CV_32F] = (void*)FUNCNAME##_32f##FLAG;  \
     (tab).fn_2d[CV_64F] = (void*)FUNCNAME##_64f##FLAG
+
+//! OpenGL extension table
+class CV_EXPORTS CvOpenGlFuncTab
+{
+public:
+    virtual ~CvOpenGlFuncTab();
+
+    virtual void genBuffers(int n, unsigned int* buffers) const = 0;        
+    virtual void deleteBuffers(int n, const unsigned int* buffers) const = 0;
+
+    virtual void bufferData(unsigned int target, ptrdiff_t size, const void* data, unsigned int usage) const = 0;
+    virtual void bufferSubData(unsigned int target, ptrdiff_t offset, ptrdiff_t size, const void* data) const = 0;
+
+    virtual void bindBuffer(unsigned int target, unsigned int buffer) const = 0;
+
+    virtual void* mapBuffer(unsigned int target, unsigned int access) const = 0;
+    virtual void unmapBuffer(unsigned int target) const = 0;
+
+    virtual void generateBitmapFont(const std::string& family, int height, int weight, bool italic, bool underline, int start, int count, int base) const = 0;
+
+    virtual bool isGlContextInitialized() const = 0;
+};
+
+CV_EXPORTS void icvSetOpenGlFuncTab(const CvOpenGlFuncTab* tab);
+
+CV_EXPORTS bool icvCheckGlError(const char* file, const int line, const char* func = "");
+
+#if defined(__GNUC__)
+    #define CV_CheckGlError() CV_DbgAssert( (::icvCheckGlError(__FILE__, __LINE__, __func__)) )
+#else
+    #define CV_CheckGlError() CV_DbgAssert( (::icvCheckGlError(__FILE__, __LINE__)) )
+#endif
 
 #endif

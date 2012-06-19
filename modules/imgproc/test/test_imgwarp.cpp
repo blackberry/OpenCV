@@ -1372,6 +1372,95 @@ void CV_GetQuadSubPixTest::prepare_to_validation( int /*test_case_idx*/ )
         dst.convertTo(dst0, dst0.depth());
 }
 
+TEST(Imgproc_cvWarpAffine, regression)
+{
+    IplImage* src = cvCreateImage(cvSize(100, 100), IPL_DEPTH_8U, 1);
+    IplImage* dst = cvCreateImage(cvSize(100, 100), IPL_DEPTH_8U, 1);
+
+    float m[6];
+    CvMat M = cvMat( 2, 3, CV_32F, m );
+    int w = src->width;
+    int h = src->height;
+    cv2DRotationMatrix(cvPoint2D32f(w*0.5f, h*0.5f), 45.0, 1.0, &M);
+    cvWarpAffine(src, dst, &M);
+}
+
+TEST(Imgproc_fitLine_vector_3d, regression)
+{
+    std::vector<Point3f> points_vector;
+
+    Point3f p21(4,4,4);
+    Point3f p22(8,8,8);
+
+    points_vector.push_back(p21);
+    points_vector.push_back(p22);
+
+    std::vector<float> line;
+
+    cv::fitLine(points_vector, line, CV_DIST_L2, 0 ,0 ,0);
+
+    ASSERT_EQ(line.size(), (size_t)6);
+
+}
+
+TEST(Imgproc_fitLine_vector_2d, regression)
+{
+    std::vector<Point2f> points_vector;
+
+    Point2f p21(4,4);
+    Point2f p22(8,8);
+    Point2f p23(16,16);
+
+    points_vector.push_back(p21);
+    points_vector.push_back(p22);
+    points_vector.push_back(p23);   
+
+    std::vector<float> line;
+
+    cv::fitLine(points_vector, line, CV_DIST_L2, 0 ,0 ,0);
+
+    ASSERT_EQ(line.size(), (size_t)4);
+}
+
+TEST(Imgproc_fitLine_Mat_2dC2, regression)
+{
+    cv::Mat mat1(3, 1, CV_32SC2);
+    std::vector<float> line1;
+
+    cv::fitLine(mat1, line1, CV_DIST_L2, 0 ,0 ,0);
+
+    ASSERT_EQ(line1.size(), (size_t)4);
+}
+
+TEST(Imgproc_fitLine_Mat_2dC1, regression)
+{
+    cv::Matx<int, 3, 2> mat2;
+    std::vector<float> line2;
+
+    cv::fitLine(mat2, line2, CV_DIST_L2, 0 ,0 ,0);
+
+    ASSERT_EQ(line2.size(), (size_t)4);
+}
+
+TEST(Imgproc_fitLine_Mat_3dC3, regression)
+{
+    cv::Mat mat1(2, 1, CV_32SC3);
+    std::vector<float> line1;
+
+    cv::fitLine(mat1, line1, CV_DIST_L2, 0 ,0 ,0);
+
+    ASSERT_EQ(line1.size(), (size_t)6);
+}
+
+TEST(Imgproc_fitLine_Mat_3dC1, regression)
+{
+    cv::Mat mat2(2, 3, CV_32SC1);
+    std::vector<float> line2;
+
+    cv::fitLine(mat2, line2, CV_DIST_L2, 0 ,0 ,0);
+
+    ASSERT_EQ(line2.size(), (size_t)6);
+}
 
 //////////////////////////////////////////////////////////////////////////
 

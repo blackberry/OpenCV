@@ -332,7 +332,6 @@ int icvComputeCoeffForStereo(  CvStereoCamera* stereoCamera)
 }
 
 
-
 /*--------------------------------------------------------------------------------------*/
 int icvComCoeffForLine(   CvPoint2D64d point1,
                             CvPoint2D64d point2,
@@ -350,33 +349,33 @@ int icvComCoeffForLine(   CvPoint2D64d point1,
     /* Get direction for all points */
     /* Direction for camera 1 */
     
-    double direct1[3];
-    double direct2[3];
-    double camPoint1[3];
+    CvPoint3D64f direct1;
+    CvPoint3D64f direct2;
+    CvPoint3D64f camPoint1;
     
-    double directS3[3];
-    double directS4[3];
-    double direct3[3];
-    double direct4[3];
-    double camPoint2[3];
+    CvPoint3D64f directS3;
+    CvPoint3D64f directS4;
+    CvPoint3D64f direct3;
+    CvPoint3D64f direct4;
+    CvPoint3D64f camPoint2;
     
     icvGetDirectionForPoint(   point1,
                             camMatr1,
-                            (CvPoint3D64d*)direct1);
+                            &direct1);
     
     icvGetDirectionForPoint(   point2,
                             camMatr1,
-                            (CvPoint3D64d*)direct2);
+                            &direct2);
 
     /* Direction for camera 2 */
 
     icvGetDirectionForPoint(   point3,
                             camMatr2,
-                            (CvPoint3D64d*)directS3);
+                            &directS3);
     
     icvGetDirectionForPoint(   point4,
                             camMatr2,
-                            (CvPoint3D64d*)directS4);
+                            &directS4);
 
     /* Create convertion for camera 2: two direction and camera point */
     
@@ -390,30 +389,30 @@ int icvComCoeffForLine(   CvPoint2D64d point1,
                             convRotMatr,
                             convTransVect);
 
-    double zeroVect[3];
-    zeroVect[0] = zeroVect[1] = zeroVect[2] = 0.0;
-    camPoint1[0] = camPoint1[1] = camPoint1[2] = 0.0;
+    CvPoint3D64f zeroVect;
+    zeroVect.x = zeroVect.y = zeroVect.z = 0.0;
+    camPoint1.x = camPoint1.y = camPoint1.z = 0.0;
     
-    icvConvertPointSystem(*((CvPoint3D64d*)directS3),(CvPoint3D64d*)direct3,convRotMatr,convTransVect);
-    icvConvertPointSystem(*((CvPoint3D64d*)directS4),(CvPoint3D64d*)direct4,convRotMatr,convTransVect);
-    icvConvertPointSystem(*((CvPoint3D64d*)zeroVect),(CvPoint3D64d*)camPoint2,convRotMatr,convTransVect);
+    icvConvertPointSystem(directS3,&direct3,convRotMatr,convTransVect);
+    icvConvertPointSystem(directS4,&direct4,convRotMatr,convTransVect);
+    icvConvertPointSystem(zeroVect,&camPoint2,convRotMatr,convTransVect);
 
-    double pointB[3];
+    CvPoint3D64f pointB;
         
     int postype = 0;
     
     /* Changed order */
     /* Compute point B: xB,yB,zB */
-    icvGetCrossLines(*((CvPoint3D64d*)camPoint1),*((CvPoint3D64d*)direct2),
-                  *((CvPoint3D64d*)camPoint2),*((CvPoint3D64d*)direct3),
-                  (CvPoint3D64d*)pointB);
+    icvGetCrossLines(camPoint1,direct2,
+                  camPoint2,direct3,
+                  &pointB);
 
-    if( pointB[2] < 0 )/* If negative use other lines for cross */
+    if( pointB.z < 0 )/* If negative use other lines for cross */
     {
         postype = 1;
-        icvGetCrossLines(*((CvPoint3D64d*)camPoint1),*((CvPoint3D64d*)direct1),
-                      *((CvPoint3D64d*)camPoint2),*((CvPoint3D64d*)direct4),
-                      (CvPoint3D64d*)pointB);
+        icvGetCrossLines(camPoint1,direct1,
+                      camPoint2,direct4,
+                      &pointB);
     }
 
     CvPoint3D64d pointNewA;
@@ -424,39 +423,33 @@ int icvComCoeffForLine(   CvPoint2D64d point1,
 
     if( postype == 0 )
     {
-        icvGetSymPoint3D(   *((CvPoint3D64d*)camPoint1),
-                            *((CvPoint3D64d*)direct1),
-                            *((CvPoint3D64d*)pointB),
+        icvGetSymPoint3D(   camPoint1,
+                            direct1,
+                            pointB,
                             &pointNewA);
 
-        icvGetSymPoint3D(   *((CvPoint3D64d*)camPoint2),
-                            *((CvPoint3D64d*)direct4),
-                            *((CvPoint3D64d*)pointB),
+        icvGetSymPoint3D(   camPoint2,
+                            direct4,
+                            pointB,
                             &pointNewC);
     }
     else
     {/* In this case we must change cameras */
         *needSwapCamera = 1;
-        icvGetSymPoint3D(   *((CvPoint3D64d*)camPoint2),
-                            *((CvPoint3D64d*)direct3),
-                            *((CvPoint3D64d*)pointB),
+        icvGetSymPoint3D(   camPoint2,
+                            direct3,
+                            pointB,
                             &pointNewA);
 
-        icvGetSymPoint3D(   *((CvPoint3D64d*)camPoint1),
-                            *((CvPoint3D64d*)direct2),
-                            *((CvPoint3D64d*)pointB),
+        icvGetSymPoint3D(   camPoint1,
+                            direct2,
+                            pointB,
                             &pointNewC);
     }
 
 
     double gamma;
     
-    double x1,y1,z1;
-
-    x1 = camPoint1[0];
-    y1 = camPoint1[1];
-    z1 = camPoint1[2];
-
     double xA,yA,zA;
     double xB,yB,zB;
     double xC,yC,zC;
@@ -465,9 +458,9 @@ int icvComCoeffForLine(   CvPoint2D64d point1,
     yA = pointNewA.y;
     zA = pointNewA.z;
 
-    xB = pointB[0];
-    yB = pointB[1];
-    zB = pointB[2];
+    xB = pointB.x;
+    yB = pointB.y;
+    zB = pointB.z;
 
     xC = pointNewC.x;
     yC = pointNewC.y;
@@ -479,8 +472,8 @@ int icvComCoeffForLine(   CvPoint2D64d point1,
     gamma = len2 / len1;
 
     icvComputeStereoLineCoeffs( pointNewA,
-                                *((CvPoint3D64d*)pointB),
-                                *((CvPoint3D64d*)camPoint1),
+                                pointB,
+                                camPoint1,
                                 gamma,
                                 coeffs);
     
@@ -2179,9 +2172,8 @@ icvCvt_64d_32f( double *src, float *dst, int size )
 void FindLineForEpiline(    CvSize imageSize,
                             float a,float b,float c,
                             CvPoint2D32f *start,CvPoint2D32f *end,
-                            int* result)
+                            int*)
 {
-    result = result;
     CvPoint2D32f frameBeg;
 
     CvPoint2D32f frameEnd;
@@ -2861,12 +2853,12 @@ int icvSelectBestRt(           int           numImages,
                                         &tmpPoint2,
                                         rotMatrs1_64d + currImagePair*9,
                                         transVects1_64d + currImagePair*3);
-                double err;
+                /*double err;
                 double dx,dy,dz;
                 dx = tmpPoint2.x - points1[i].x;
                 dy = tmpPoint2.y - points1[i].y;
                 dz = tmpPoint2.z - points1[i].z;
-                err = sqrt(dx*dx + dy*dy + dz*dz);
+                err = sqrt(dx*dx + dy*dy + dz*dz);*/
 
 
             }
@@ -3460,43 +3452,37 @@ int GetCrossLines(CvPoint2D32f p1_start,CvPoint2D32f p1_end,CvPoint2D32f p2_star
 
 int icvGetCrossPieceVector(CvPoint2D32f p1_start,CvPoint2D32f p1_end,CvPoint2D32f v2_start,CvPoint2D32f v2_end,CvPoint2D32f *cross)
 {
-    double ex1,ey1,ex2,ey2;
-    double px1,py1,px2,py2;
-    double del;
-    double delA,delB,delX,delY;
-    double alpha,betta;
+    double ex1 = p1_start.x;
+    double ey1 = p1_start.y;
+    double ex2 = p1_end.x;
+    double ey2 = p1_end.y;
 
-    ex1 = p1_start.x;
-    ey1 = p1_start.y;
-    ex2 = p1_end.x;
-    ey2 = p1_end.y;
+    double px1 = v2_start.x;
+    double py1 = v2_start.y;
+    double px2 = v2_end.x;
+    double py2 = v2_end.y;
 
-    px1 = v2_start.x;
-    py1 = v2_start.y;
-    px2 = v2_end.x;
-    py2 = v2_end.y;
-
-    del = (ex1-ex2)*(py2-py1)+(ey2-ey1)*(px2-px1);
+    double del = (ex1-ex2)*(py2-py1)+(ey2-ey1)*(px2-px1);
     if( del == 0)
     {
         return -1;
     }
 
-    delA =  (px1-ex1)*(py1-py2) + (ey1-py1)*(px1-px2);
-    delB =  (ex1-px1)*(ey1-ey2) + (py1-ey1)*(ex1-ex2);
+    double delA =  (px1-ex1)*(py1-py2) + (ey1-py1)*(px1-px2);
+    //double delB =  (ex1-px1)*(ey1-ey2) + (py1-ey1)*(ex1-ex2);
 
-    alpha =  delA / del;
-    betta = -delB / del;
+    double alpha =  delA / del;
+    //double betta = -delB / del;
 
     if( alpha < 0 || alpha > 1.0 )
     {
         return -1;
     }
 
-    delX =  (ex1-ex2)*(py1*(px1-px2)-px1*(py1-py2))+
+    double delX =  (ex1-ex2)*(py1*(px1-px2)-px1*(py1-py2))+
             (px1-px2)*(ex1*(ey1-ey2)-ey1*(ex1-ex2));
 
-    delY =  (ey1-ey2)*(px1*(py1-py2)-py1*(px1-px2))+
+    double delY =  (ey1-ey2)*(px1*(py1-py2)-py1*(px1-px2))+
             (py1-py2)*(ey1*(ex1-ex2)-ex1*(ey1-ey2));
 
     cross->x = (float)( delX / del);

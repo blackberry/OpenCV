@@ -63,7 +63,9 @@ GEMM_CopyBlock( const uchar* src, size_t src_step,
 
     for( ; size.height--; src += src_step, dst += dst_step )
     {
-        for( j = 0; j <= size.width - 4; j += 4 )
+		j=0;
+         #if CV_ENABLE_UNROLLED
+        for( ; j <= size.width - 4; j += 4 )
         {
             int t0 = ((const int*)src)[j];
             int t1 = ((const int*)src)[j+1];
@@ -74,7 +76,7 @@ GEMM_CopyBlock( const uchar* src, size_t src_step,
             ((int*)dst)[j+2] = t0;
             ((int*)dst)[j+3] = t1;
         }
-
+        #endif
         for( ; j < size.width; j++ )
             ((int*)dst)[j] = ((const int*)src)[j];
     }
@@ -237,15 +239,16 @@ GEMMSingleMul( const T* a_data, size_t a_step,
                                                c_data += c_step1 )
             {
                 WT s0(0), s1(0), s2(0), s3(0);
-
-                for( k = 0; k <= n - 4; k += 4 )
+                k = 0;
+                 #if CV_ENABLE_UNROLLED
+                for( ; k <= n - 4; k += 4 )
                 {
                     s0 += WT(a_data[k])*WT(b_data[k]);
                     s1 += WT(a_data[k+1])*WT(b_data[k+1]);
                     s2 += WT(a_data[k+2])*WT(b_data[k+2]);
                     s3 += WT(a_data[k+3])*WT(b_data[k+3]);
                 }
-
+                #endif
                 for( ; k < n; k++ )
                     s0 += WT(a_data[k])*WT(b_data[k]);
                 s0 = (s0+s1+s2+s3)*alpha;
@@ -342,8 +345,9 @@ GEMMSingleMul( const T* a_data, size_t a_step,
             for( k = 0; k < n; k++, b_data += b_step )
             {
                 WT al(a_data[k]);
-
-                for( j = 0; j <= m - 4; j += 4 )
+				j=0;
+                 #if CV_ENABLE_UNROLLED
+                for(; j <= m - 4; j += 4 )
                 {
                     WT t0 = d_buf[j] + WT(b_data[j])*al;
                     WT t1 = d_buf[j+1] + WT(b_data[j+1])*al;
@@ -354,7 +358,7 @@ GEMMSingleMul( const T* a_data, size_t a_step,
                     d_buf[j+2] = t0;
                     d_buf[j+3] = t1;
                 }
-
+                #endif
                 for( ; j < m; j++ )
                     d_buf[j] += WT(b_data[j])*al;
             }
@@ -509,7 +513,9 @@ GEMMStore( const T* c_data, size_t c_step,
         if( _c_data )
         {
             c_data = _c_data;
-            for( j = 0; j <= d_size.width - 4; j += 4, c_data += 4*c_step1 )
+			j=0;
+			 #if CV_ENABLE_UNROLLED
+            for(; j <= d_size.width - 4; j += 4, c_data += 4*c_step1 )
             {
                 WT t0 = alpha*d_buf[j];
                 WT t1 = alpha*d_buf[j+1];
@@ -524,6 +530,7 @@ GEMMStore( const T* c_data, size_t c_step,
                 d_data[j+2] = T(t0);
                 d_data[j+3] = T(t1);
             }
+            #endif
             for( ; j < d_size.width; j++, c_data += c_step1 )
             {
                 WT t0 = alpha*d_buf[j];
@@ -532,7 +539,9 @@ GEMMStore( const T* c_data, size_t c_step,
         }
         else
         {
-            for( j = 0; j <= d_size.width - 4; j += 4 )
+			j = 0;
+			 #if CV_ENABLE_UNROLLED
+            for( ; j <= d_size.width - 4; j += 4 )
             {
                 WT t0 = alpha*d_buf[j];
                 WT t1 = alpha*d_buf[j+1];
@@ -543,6 +552,7 @@ GEMMStore( const T* c_data, size_t c_step,
                 d_data[j+2] = T(t0);
                 d_data[j+3] = T(t1);
             }
+			#endif
             for( ; j < d_size.width; j++ )
                 d_data[j] = T(alpha*d_buf[j]);
         }
@@ -1987,6 +1997,7 @@ static void scaleAdd_32f(const float* src1, const float* src2, float* dst,
     }
     else
 #endif
+    //vz why do we need unroll here?
     for( ; i <= len - 4; i += 4 )
     {
         float t0, t1;
@@ -1997,7 +2008,7 @@ static void scaleAdd_32f(const float* src1, const float* src2, float* dst,
         t1 = src1[i+3]*alpha + src2[i+3];
         dst[i+2] = t0; dst[i+3] = t1;
     }
-    for( ; i < len; i++ )
+	for(; i < len; i++ )
         dst[i] = src1[i]*alpha + src2[i];
 }
 
@@ -2024,6 +2035,7 @@ static void scaleAdd_64f(const double* src1, const double* src2, double* dst,
     }
     else
 #endif
+     //vz why do we need unroll here? 
     for( ; i <= len - 4; i += 4 )
     {
         double t0, t1;
@@ -2034,7 +2046,7 @@ static void scaleAdd_64f(const double* src1, const double* src2, double* dst,
         t1 = src1[i+3]*alpha + src2[i+3];
         dst[i+2] = t0; dst[i+3] = t1;
     }
-    for( ; i < len; i++ )
+	for(; i < len; i++ )
         dst[i] = src1[i]*alpha + src2[i];
 }
 
@@ -2086,7 +2098,7 @@ void cv::calcCovarMatrix( const Mat* data, int nsamples, Mat& covar, Mat& _mean,
 {
     CV_Assert( data && nsamples > 0 );
     Size size = data[0].size();
-    int sz = size.width*size.height, esz = (int)data[0].elemSize();
+    int sz = size.width * size.height, esz = (int)data[0].elemSize();
     int type = data[0].type();
     Mat mean;
     ctype = std::max(std::max(CV_MAT_DEPTH(ctype >= 0 ? ctype : type), _mean.depth()), CV_32F);
@@ -2104,6 +2116,7 @@ void cv::calcCovarMatrix( const Mat* data, int nsamples, Mat& covar, Mat& _mean,
     }
 
     Mat _data(nsamples, sz, type);
+
     for( int i = 0; i < nsamples; i++ )
     {
         CV_Assert( data[i].size() == size && data[i].type() == type );
@@ -2123,6 +2136,55 @@ void cv::calcCovarMatrix( const Mat* data, int nsamples, Mat& covar, Mat& _mean,
 
 void cv::calcCovarMatrix( InputArray _data, OutputArray _covar, InputOutputArray _mean, int flags, int ctype )
 {
+    if(_data.kind() == _InputArray::STD_VECTOR_MAT)
+    {
+        std::vector<cv::Mat> src;
+        _data.getMatVector(src);
+
+        CV_Assert( src.size() > 0 );
+
+        Size size = src[0].size();
+        int type = src[0].type();
+
+        ctype = std::max(std::max(CV_MAT_DEPTH(ctype >= 0 ? ctype : type), _mean.depth()), CV_32F);
+
+        Mat _data(static_cast<int>(src.size()), size.area(), type);
+
+        int i = 0;
+        for(vector<cv::Mat>::iterator each = src.begin(); each != src.end(); each++, i++ )
+        {
+            CV_Assert( (*each).size() == size && (*each).type() == type );
+            Mat dataRow(size.height, size.width, type, _data.ptr(i));
+            (*each).copyTo(dataRow);
+        }
+
+        Mat mean;
+        if( (flags & CV_COVAR_USE_AVG) != 0 )
+        {
+            CV_Assert( _mean.size() == size );
+
+            if( mean.type() != ctype )
+            {
+                mean = _mean.getMat();
+                _mean.create(mean.size(), ctype);
+                Mat tmp = _mean.getMat();
+                mean.convertTo(tmp, ctype);
+                mean = tmp;
+            }
+
+            mean = _mean.getMat().reshape(1, 1);
+        }
+
+        calcCovarMatrix( _data, _covar, mean, (flags & ~(CV_COVAR_ROWS|CV_COVAR_COLS)) | CV_COVAR_ROWS, ctype );
+
+        if( (flags & CV_COVAR_USE_AVG) == 0 )
+        {
+            mean = mean.reshape(1, size.height);
+            mean.copyTo(_mean);
+        }
+        return;
+    }
+
     Mat data = _data.getMat(), mean;
     CV_Assert( ((flags & CV_COVAR_ROWS) != 0) ^ ((flags & CV_COVAR_COLS) != 0) );
     bool takeRows = (flags & CV_COVAR_ROWS) != 0;
@@ -2198,9 +2260,12 @@ double cv::Mahalanobis( InputArray _v1, InputArray _v2, InputArray _icovar )
         for( i = 0; i < len; i++, mat += matstep )
         {
             double row_sum = 0;
-            for( j = 0; j <= len - 4; j += 4 )
+            j = 0;
+			 #if CV_ENABLE_UNROLLED
+            for(; j <= len - 4; j += 4 )
                 row_sum += diff[j]*mat[j] + diff[j+1]*mat[j+1] +
                            diff[j+2]*mat[j+2] + diff[j+3]*mat[j+3];
+            #endif
             for( ; j < len; j++ )
                 row_sum += diff[j]*mat[j];
             result += row_sum * diff[i];
@@ -2226,9 +2291,12 @@ double cv::Mahalanobis( InputArray _v1, InputArray _v2, InputArray _icovar )
         for( i = 0; i < len; i++, mat += matstep )
         {
             double row_sum = 0;
-            for( j = 0; j <= len - 4; j += 4 )
+            j = 0;
+			 #if CV_ENABLE_UNROLLED
+            for(; j <= len - 4; j += 4 )
                 row_sum += diff[j]*mat[j] + diff[j+1]*mat[j+1] +
                            diff[j+2]*mat[j+2] + diff[j+3]*mat[j+3];
+            #endif
             for( ; j < len; j++ )
                 row_sum += diff[j]*mat[j];
             result += row_sum * diff[i];
@@ -2574,9 +2642,11 @@ dotProd_(const T* src1, const T* src2, int len)
 {
     int i = 0;
     double result = 0;
+	 #if CV_ENABLE_UNROLLED
     for( ; i <= len - 4; i += 4 )
         result += (double)src1[i]*src2[i] + (double)src1[i+1]*src2[i+1] +
             (double)src1[i+2]*src2[i+2] + (double)src1[i+3]*src2[i+3];
+    #endif
     for( ; i < len; i++ )
         result += (double)src1[i]*src2[i];
 
@@ -2598,13 +2668,14 @@ static double dotProd_8u(const uchar* src1, const uchar* src2, int len)
 #if CV_SSE2
     if( USE_SSE2 )
     {
-        int j, len0 = len & -4, blockSize0 = (1 << 15), blockSize;
+        int j, len0 = len & -4, blockSize0 = (1 << 13), blockSize;
         __m128i z = _mm_setzero_si128();
         while( i < len0 )
         {
             blockSize = std::min(len0 - i, blockSize0);
             __m128i s = _mm_setzero_si128();
-            for( j = 0; j <= blockSize - 16; j += 16 )
+			j = 0;
+            for( ; j <= blockSize - 16; j += 16 )
             {
                 __m128i b0 = _mm_loadu_si128((const __m128i*)(src1 + j));
                 __m128i b1 = _mm_loadu_si128((const __m128i*)(src2 + j));
@@ -2614,7 +2685,7 @@ static double dotProd_8u(const uchar* src1, const uchar* src2, int len)
                 s1 = _mm_unpacklo_epi8(b1, z);
                 s3 = _mm_unpackhi_epi8(b1, z);
                 s0 = _mm_madd_epi16(s0, s1);
-                s1 = _mm_madd_epi16(s2, s3);
+                s2 = _mm_madd_epi16(s2, s3);
                 s = _mm_add_epi32(s, s0);
                 s = _mm_add_epi32(s, s2);
             }
@@ -2697,8 +2768,9 @@ typedef double (*DotProdFunc)(const uchar* src1, const uchar* src2, int len);
 
 static DotProdFunc dotProdTab[] =
 {
-    (DotProdFunc)dotProd_8u, (DotProdFunc)dotProd_8s, (DotProdFunc)dotProd_16u,
-    (DotProdFunc)dotProd_16s, (DotProdFunc)dotProd_32s, (DotProdFunc)dotProd_32f,
+    (DotProdFunc)GET_OPTIMIZED(dotProd_8u), (DotProdFunc)GET_OPTIMIZED(dotProd_8s),
+    (DotProdFunc)dotProd_16u, (DotProdFunc)dotProd_16s,
+    (DotProdFunc)dotProd_32s, (DotProdFunc)GET_OPTIMIZED(dotProd_32f),
     (DotProdFunc)dotProd_64f, 0
 };
 

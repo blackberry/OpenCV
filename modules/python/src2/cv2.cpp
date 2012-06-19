@@ -17,7 +17,15 @@
 #include "opencv2/objdetect/objdetect.hpp"
 #include "opencv2/video/tracking.hpp"
 #include "opencv2/video/background_segm.hpp"
+#include "opencv2/photo/photo.hpp"
 #include "opencv2/highgui/highgui.hpp"
+
+#include "opencv2/opencv_modules.hpp"
+#ifdef HAVE_OPENCV_NONFREE
+#include "opencv2/nonfree/nonfree.hpp"
+static bool makeUseOfNonfree = cv::initModule_nonfree();
+#endif
+
 
 using cv::flann::IndexParams;
 using cv::flann::SearchParams;
@@ -37,9 +45,34 @@ static int failmsg(const char *fmt, ...)
     return 0;
 }
 
+class PyAllowThreads
+{
+public:
+    PyAllowThreads() : _state(PyEval_SaveThread()) {}
+    ~PyAllowThreads() 
+    {
+        PyEval_RestoreThread(_state);
+    }
+private:
+    PyThreadState* _state;
+};
+
+class PyEnsureGIL
+{
+public:
+    PyEnsureGIL() : _state(PyGILState_Ensure()) {}
+    ~PyEnsureGIL() 
+    {
+        PyGILState_Release(_state);
+    }
+private:
+    PyGILState_STATE _state;
+};
+
 #define ERRWRAP2(expr) \
 try \
 { \
+    PyAllowThreads allowThreads; \
     expr; \
 } \
 catch (const cv::Exception &e) \
@@ -64,9 +97,24 @@ typedef vector<Vec4i> vector_Vec4i;
 typedef vector<Rect> vector_Rect;
 typedef vector<KeyPoint> vector_KeyPoint;
 typedef vector<Mat> vector_Mat;
+typedef vector<DMatch> vector_DMatch;
+typedef vector<string> vector_string;
 typedef vector<vector<Point> > vector_vector_Point;
 typedef vector<vector<Point2f> > vector_vector_Point2f;
 typedef vector<vector<Point3f> > vector_vector_Point3f;
+typedef vector<vector<DMatch> > vector_vector_DMatch;
+
+typedef Ptr<Algorithm> Ptr_Algorithm;
+typedef Ptr<FeatureDetector> Ptr_FeatureDetector;
+typedef Ptr<DescriptorExtractor> Ptr_DescriptorExtractor;
+typedef Ptr<DescriptorMatcher> Ptr_DescriptorMatcher;
+
+typedef SimpleBlobDetector::Params SimpleBlobDetector_Params;
+
+typedef cvflann::flann_distance_t cvflann_flann_distance_t;
+typedef cvflann::flann_algorithm_t cvflann_flann_algorithm_t;
+typedef Ptr<flann::IndexParams> Ptr_flann_IndexParams;
+typedef Ptr<flann::SearchParams> Ptr_flann_SearchParams;
 
 static PyObject* failmsgp(const char *fmt, ...)
 {
@@ -103,6 +151,8 @@ public:
     void allocate(int dims, const int* sizes, int type, int*& refcount,
                   uchar*& datastart, uchar*& data, size_t* step)
     {
+        PyEnsureGIL gil;
+
         int depth = CV_MAT_DEPTH(type);
         int cn = CV_MAT_CN(type);
         const int f = (int)(sizeof(size_t)/8);
@@ -133,6 +183,7 @@ public:
     
     void deallocate(int* refcount, uchar* datastart, uchar* data)
     {
+        PyEnsureGIL gil;
         if( !refcount )
             return;
         PyObject* o = pyObjectFromRefcount(refcount);
@@ -312,6 +363,14 @@ static PyObject* pyopencv_from(size_t value)
     return PyLong_FromUnsignedLong((unsigned long)value);
 }
 
+static bool pyopencv_to(PyObject* obj, size_t& value, const char* name = "<unknown>")
+{
+    if(!obj || obj == Py_None)
+        return true;
+    value = (int)PyLong_AsUnsignedLong(obj);
+    return value != (size_t)-1 || !PyErr_Occurred();
+}
+
 static PyObject* pyopencv_from(int value)
 {
     return PyInt_FromLong(value);
@@ -323,6 +382,20 @@ static bool pyopencv_to(PyObject* obj, int& value, const char* name = "<unknown>
         return true;
     value = (int)PyInt_AsLong(obj);
     return value != -1 || !PyErr_Occurred();
+}
+
+static PyObject* pyopencv_from(uchar value)
+{
+    return PyInt_FromLong(value);
+}
+
+static bool pyopencv_to(PyObject* obj, uchar& value, const char* name = "<unknown>")
+{
+    if(!obj || obj == Py_None)
+        return true;
+    int ivalue = (int)PyInt_AsLong(obj);
+    value = cv::saturate_cast<uchar>(ivalue);
+    return ivalue != -1 || !PyErr_Occurred();
 }
 
 static PyObject* pyopencv_from(double value)
@@ -605,6 +678,7 @@ template<typename _Tp> static inline PyObject* pyopencv_from(const vector<_Tp>& 
 }
 
 static PyObject* pyopencv_from(const KeyPoint&);
+static PyObject* pyopencv_from(const DMatch&);
 
 template<typename _Tp> static inline bool pyopencv_to_generic_vec(PyObject* obj, vector<_Tp>& value, const char* name="<unknown>")
 {
@@ -684,6 +758,32 @@ template<> struct pyopencvVecConverter<KeyPoint>
     }
     
     static PyObject* from(const vector<KeyPoint>& value)
+    {
+        return pyopencv_from_generic_vec(value);
+    }
+};
+
+template<> struct pyopencvVecConverter<DMatch>
+{
+    static bool to(PyObject* obj, vector<DMatch>& value, const char* name="<unknown>")
+    {
+        return pyopencv_to_generic_vec(obj, value, name);
+    }
+    
+    static PyObject* from(const vector<DMatch>& value)
+    {
+        return pyopencv_from_generic_vec(value);
+    }
+};
+
+template<> struct pyopencvVecConverter<string>
+{
+    static bool to(PyObject* obj, vector<string>& value, const char* name="<unknown>")
+    {
+        return pyopencv_to_generic_vec(obj, value, name);
+    }
+    
+    static PyObject* from(const vector<string>& value)
     {
         return pyopencv_from_generic_vec(value);
     }
@@ -791,6 +891,14 @@ static bool pyopencv_to(PyObject *o, cv::flann::IndexParams& p, const char *name
     Py_XDECREF(values);
     return ok;
 }
+
+template <class T>
+static bool pyopencv_to(PyObject *o, Ptr<T>& p, const char *name="<unknown>")
+{
+    p = new T();
+    return pyopencv_to(o, *p, name);
+}
+
 
 static bool pyopencv_to(PyObject *o, cvflann::flann_distance_t& dist, const char *name="<unknown>")
 {
@@ -917,7 +1025,7 @@ void initcv2()
   PyObject* m = Py_InitModule(MODULESTR, methods);
   PyObject* d = PyModule_GetDict(m);
 
-  PyDict_SetItemString(d, "__version__", PyString_FromString("$Rev: 4557 $"));
+  PyDict_SetItemString(d, "__version__", PyString_FromString(CV_VERSION));
 
   opencv_error = PyErr_NewException((char*)MODULESTR".error", NULL, NULL);
   PyDict_SetItemString(d, "error", opencv_error);

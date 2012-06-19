@@ -706,73 +706,6 @@ protected:
     }
 };
 
-
-//----------------------------------- StereoGC test -----------------------------------------------------
-
-class CV_StereoGCTest : public CV_StereoMatchingTest
-{
-public:
-    CV_StereoGCTest()
-    {
-        name = "stereogc"; 
-        fill(rmsEps.begin(), rmsEps.end(), 3.f);
-        fracEps[0] = 0.05f; // all
-        fracEps[1] = 0.05f; // noOccl
-        fracEps[2] = 0.25f; // occl
-        fracEps[3] = 0.05f; // textured
-        fracEps[4] = 0.10f; // textureless
-        fracEps[5] = 0.10f; // borderedDepthDiscont
-    }
-protected:
-    struct RunParams
-    {
-        int ndisp;
-        int iterCount;
-    };
-    vector<RunParams> caseRunParams;
-
-    virtual int readRunParams( FileStorage& fs )
-    {
-        int code = CV_StereoMatchingTest::readRunParams(fs);
-        FileNode fn = fs.getFirstTopLevelNode();
-        assert(fn.isSeq());
-        for( int i = 0; i < (int)fn.size(); i+=4 )
-        {
-            string caseName = fn[i], datasetName = fn[i+1];
-            RunParams params;
-            string ndisp = fn[i+2]; params.ndisp = atoi(ndisp.c_str());
-            string iterCount = fn[i+3]; params.iterCount = atoi(iterCount.c_str());
-            caseNames.push_back( caseName );
-            caseDatasets.push_back( datasetName );
-            caseRunParams.push_back( params );
-        }
-        return code;
-    }
-
-    virtual int runStereoMatchingAlgorithm( const Mat& _leftImg, const Mat& _rightImg,
-                   Mat& leftDisp, Mat& rightDisp, int caseIdx )
-    {
-        RunParams params = caseRunParams[caseIdx];
-        assert( _leftImg.type() == CV_8UC3 && _rightImg.type() == CV_8UC3 );
-        Mat leftImg, rightImg, tmp;
-        cvtColor( _leftImg, leftImg, CV_BGR2GRAY );
-        cvtColor( _rightImg, rightImg, CV_BGR2GRAY );
-
-        leftDisp.create( leftImg.size(), CV_16SC1 );
-        rightDisp.create( rightImg.size(), CV_16SC1 );
-
-        CvMat _limg = leftImg, _rimg = rightImg, _ldisp = leftDisp, _rdisp = rightDisp;
-        CvStereoGCState *state = cvCreateStereoGCState( params.ndisp, params.iterCount );
-        cvFindStereoCorrespondenceGC( &_limg, &_rimg, &_ldisp, &_rdisp, state );
-        cvReleaseStereoGCState( &state );
-
-        leftDisp = - leftDisp;
-        return 0;
-    }
-
-};
-
-
 //----------------------------------- StereoSGBM test -----------------------------------------------------
 
 class CV_StereoSGBMTest : public CV_StereoMatchingTest
@@ -829,5 +762,4 @@ protected:
 
 
 TEST(Calib3d_StereoBM, regression) { CV_StereoBMTest test; test.safe_run(); }
-TEST(Calib3d_StereoGC, regression) { CV_StereoGCTest test; test.safe_run(); }
 TEST(Calib3d_StereoSGBM, regression) { CV_StereoSGBMTest test; test.safe_run(); }

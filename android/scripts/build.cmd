@@ -6,7 +6,7 @@ SETLOCAL ENABLEEXTENSIONS || (ECHO Unable to enable command extensions. & EXIT \
 
 :: build environment
 SET SOURCE_DIR=%cd%
-IF EXIST .\CMakeCache.android.initial.cmake (SET BUILD_OPENCV=1) ELSE (SET BUILD_OPENCV=0)
+IF EXIST .\android.toolchain.cmake (SET BUILD_OPENCV=1) ELSE (SET BUILD_OPENCV=0)
 IF EXIST .\jni\nul (SET BUILD_JAVA_PART=1) ELSE (SET BUILD_JAVA_PART=0)
 
 :: load configuration
@@ -15,9 +15,13 @@ SET SCRIPTS_DIR=%cd%
 IF EXIST .\wincfg.cmd CALL .\wincfg.cmd
 POPD
 
+:: inherit old names
+IF NOT DEFINED CMAKE SET CMAKE=%CMAKE_EXE%
+IF NOT DEFINED MAKE SET MAKE=%MAKE_EXE%
+
 :: defaults
 IF NOT DEFINED BUILD_DIR SET BUILD_DIR=build
-IF NOT DEFINED ARM_TARGET SET ARM_TARGET=armeabi-v7a
+IF NOT DEFINED ANDROID_ABI SET ANDROID_ABI=armeabi-v7a
 SET OPENCV_BUILD_DIR=%SCRIPTS_DIR%\..\%BUILD_DIR%
 
 :: check that all required variables defined
@@ -25,8 +29,8 @@ PUSHD .
 IF NOT DEFINED ANDROID_NDK (ECHO. & ECHO You should set an environment variable ANDROID_NDK to the full path to your copy of Android NDK & GOTO end)
 (CD "%ANDROID_NDK%") || (ECHO. & ECHO Directory "%ANDROID_NDK%" specified by ANDROID_NDK variable does not exist & GOTO end)
 
-IF NOT EXIST "%CMAKE_EXE%" (ECHO. & ECHO You should set an environment variable CMAKE_EXE to the full path to cmake executable & GOTO end)
-IF NOT EXIST "%MAKE_EXE%" (ECHO. & ECHO You should set an environment variable MAKE_EXE to the full path to native port of make executable & GOTO end)
+IF NOT EXIST "%CMAKE%" (ECHO. & ECHO You should set an environment variable CMAKE to the full path to cmake executable & GOTO end)
+IF NOT EXIST "%MAKE%" (ECHO. & ECHO You should set an environment variable MAKE to the full path to native port of make executable & GOTO end)
 
 IF NOT %BUILD_JAVA_PART%==1 GOTO required_variables_checked
 
@@ -42,6 +46,11 @@ IF NOT DEFINED JAVA_HOME (ECHO. & ECHO You should set an environment variable JA
 :required_variables_checked
 POPD
 
+:: check for ninja
+echo "%MAKE%"|findstr /i ninja >nul:
+IF %errorlevel%==1 (SET BUILD_WITH_NINJA=0) ELSE (SET BUILD_WITH_NINJA=1)
+IF %BUILD_WITH_NINJA%==1 (SET CMAKE_GENERATOR=Ninja) ELSE (SET CMAKE_GENERATOR=MinGW Makefiles)
+
 :: create build dir
 IF DEFINED REBUILD rmdir /S /Q "%BUILD_DIR%" 2>NUL
 MKDIR "%BUILD_DIR%" 2>NUL
@@ -49,20 +58,21 @@ PUSHD "%BUILD_DIR%" || (ECHO. & ECHO Directory "%BUILD_DIR%" is not found & GOTO
 
 :: run cmake
 ECHO. & ECHO Runnning cmake...
-ECHO ARM_TARGET=%ARM_TARGET%
+ECHO ANDROID_ABI=%ANDROID_ABI%
 ECHO.
 IF NOT %BUILD_OPENCV%==1 GOTO other-cmake
 :opencv-cmake
-("%CMAKE_EXE%" -G"MinGW Makefiles" -DARM_TARGET="%ARM_TARGET%" -C "%SOURCE_DIR%\CMakeCache.android.initial.cmake" -DCMAKE_TOOLCHAIN_FILE="%SOURCE_DIR%"\android.toolchain.cmake -DCMAKE_MAKE_PROGRAM="%MAKE_EXE%" %* "%SOURCE_DIR%\..") && GOTO cmakefin
+("%CMAKE%" -G"%CMAKE_GENERATOR%" -DANDROID_ABI="%ANDROID_ABI%" -DCMAKE_TOOLCHAIN_FILE="%SOURCE_DIR%"\android.toolchain.cmake -DCMAKE_MAKE_PROGRAM="%MAKE%" %* "%SOURCE_DIR%\..") && GOTO cmakefin
 ECHO. & ECHO cmake failed &	GOTO end
 :other-cmake
-("%CMAKE_EXE%" -G"MinGW Makefiles" -DARM_TARGET="%ARM_TARGET%" -DOpenCV_DIR="%OPENCV_BUILD_DIR%" -DCMAKE_TOOLCHAIN_FILE="%OPENCV_BUILD_DIR%\..\android.toolchain.cmake" -DCMAKE_MAKE_PROGRAM="%MAKE_EXE%" %* "%SOURCE_DIR%") && GOTO cmakefin
+("%CMAKE%" -G"%CMAKE_GENERATOR%" -DANDROID_ABI="%ANDROID_ABI%" -DOpenCV_DIR="%OPENCV_BUILD_DIR%" -DCMAKE_TOOLCHAIN_FILE="%OPENCV_BUILD_DIR%\..\android.toolchain.cmake" -DCMAKE_MAKE_PROGRAM="%MAKE%" %* "%SOURCE_DIR%") && GOTO cmakefin
 ECHO. & ECHO cmake failed &	GOTO end
 :cmakefin
 
 :: run make
 ECHO. & ECHO Building native libs...
-("%MAKE_EXE%" -j %NUMBER_OF_PROCESSORS% VERBOSE=%VERBOSE%) || (ECHO. & ECHO make failed & GOTO end)
+IF %BUILD_WITH_NINJA%==0 ("%MAKE%" -j %NUMBER_OF_PROCESSORS% VERBOSE=%VERBOSE%) || (ECHO. & ECHO make failed & GOTO end)
+IF %BUILD_WITH_NINJA%==1 ("%MAKE%") || (ECHO. & ECHO ninja failed & GOTO end)
 
 IF NOT %BUILD_JAVA_PART%==1 GOTO end
 POPD && PUSHD %SOURCE_DIR%
@@ -73,7 +83,7 @@ ECHO. & ECHO Updating Android project...
 
 :: compile java part
 ECHO. & ECHO Compiling Android project...
-(CALL "%ANT_DIR%\bin\ant" compile) || (ECHO. & ECHO failed to compile android project & GOTO end)
+(CALL "%ANT_DIR%\bin\ant" debug) || (ECHO. & ECHO failed to compile android project & GOTO end)
 
 :end
 POPD

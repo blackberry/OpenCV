@@ -57,4 +57,10 @@
 #include "opencv2/features2d/features2d.hpp"
 #include <vector>
 
+#ifdef HAVE_TEGRA_OPTIMIZATION
+#include "opencv2/calib3d/calib3d_tegra.hpp"
+#else
+#define GET_OPTIMIZED(func) (func)
+#endif
+
 #endif

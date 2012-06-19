@@ -517,7 +517,7 @@ inRangeS_(const _Tp* src, const _WTp* a, const _WTp* b, uchar* dst, size_t total
     for( i = 0; i < total; i++ )
     {
         _Tp val = src[i*cn];
-        dst[i] = a[0] <= val && val <= b[0] ? 255 : 0;
+        dst[i] = (a[0] <= val && val <= b[0]) ? uchar(255) : 0;
     }
     for( c = 1; c < cn; c++ )
     {
@@ -609,10 +609,10 @@ static void inRangeS(const Mat& src, const Scalar& lb, const Scalar& rb, Mat& ds
     size_t total = planes[0].total();
     size_t i, nplanes = it.nplanes;
 	int depth = src.depth(), cn = src.channels();
-    double lbuf[4], rbuf[4];
+    union { double d[4]; float f[4]; int i[4];} lbuf, rbuf;
     int wtype = CV_MAKETYPE(depth <= CV_32S ? CV_32S : depth, cn);
-    scalarToRawData(lb, lbuf, wtype, cn);
-    scalarToRawData(rb, rbuf, wtype, cn);
+    scalarToRawData(lb, lbuf.d, wtype, cn);
+    scalarToRawData(rb, rbuf.d, wtype, cn);
     
     for( i = 0; i < nplanes; i++, ++it )
     {
@@ -622,25 +622,25 @@ static void inRangeS(const Mat& src, const Scalar& lb, const Scalar& rb, Mat& ds
         switch( depth )
         {
         case CV_8U:
-            inRangeS_((const uchar*)sptr, (const int*)lbuf, (const int*)rbuf, dptr, total, cn);
+            inRangeS_((const uchar*)sptr, lbuf.i, rbuf.i, dptr, total, cn);
             break;
         case CV_8S:
-            inRangeS_((const schar*)sptr, (const int*)lbuf, (const int*)rbuf, dptr, total, cn);
+            inRangeS_((const schar*)sptr, lbuf.i, rbuf.i, dptr, total, cn);
             break;
         case CV_16U:
-            inRangeS_((const ushort*)sptr, (const int*)lbuf, (const int*)rbuf, dptr, total, cn);
+            inRangeS_((const ushort*)sptr, lbuf.i, rbuf.i, dptr, total, cn);
             break;
         case CV_16S:
-            inRangeS_((const short*)sptr, (const int*)lbuf, (const int*)rbuf, dptr, total, cn);
+            inRangeS_((const short*)sptr, lbuf.i, rbuf.i, dptr, total, cn);
             break;
         case CV_32S:
-            inRangeS_((const int*)sptr, (const int*)lbuf, (const int*)rbuf, dptr, total, cn);
+            inRangeS_((const int*)sptr, lbuf.i, rbuf.i, dptr, total, cn);
             break;
         case CV_32F:
-            inRangeS_((const float*)sptr, (const float*)lbuf, (const float*)rbuf, dptr, total, cn);
+            inRangeS_((const float*)sptr, lbuf.f, rbuf.f, dptr, total, cn);
             break;
         case CV_64F:
-            inRangeS_((const double*)sptr, (const double*)lbuf, (const double*)rbuf, dptr, total, cn);
+            inRangeS_((const double*)sptr, lbuf.d, rbuf.d, dptr, total, cn);
             break;
         default:
             CV_Error(CV_StsUnsupportedFormat, "");
@@ -1186,8 +1186,12 @@ struct CountNonZeroOp : public BaseElemWiseOp
     
 struct MeanStdDevOp : public BaseElemWiseOp
 {
+    Scalar sqmeanRef;
+    int cn;
+
     MeanStdDevOp() : BaseElemWiseOp(1, FIX_ALPHA+FIX_BETA+FIX_GAMMA+SUPPORT_MASK+SCALAR_OUTPUT, 1, 1, Scalar::all(0))
     {
+        cn = 0;
         context = 7;
     };
     void op(const vector<Mat>& src, Mat& dst, const Mat& mask)
@@ -1202,6 +1206,9 @@ struct MeanStdDevOp : public BaseElemWiseOp
         cvtest::multiply(temp, temp, temp);
         Scalar mean = cvtest::mean(src[0], mask);
         Scalar sqmean = cvtest::mean(temp, mask);
+        
+        sqmeanRef = sqmean;
+        cn = temp.channels();
 
         for( int c = 0; c < 4; c++ )
             sqmean[c] = std::sqrt(std::max(sqmean[c] - mean[c]*mean[c], 0.)); 
@@ -1212,7 +1219,11 @@ struct MeanStdDevOp : public BaseElemWiseOp
     }
     double getMaxErr(int)
     {
-        return 1e-6;
+        CV_Assert(cn > 0);
+        double err = sqmeanRef[0];
+        for(int i = 1; i < cn; ++i)
+            err = std::max(err, sqmeanRef[i]);
+        return 3e-7 * err;
     }
 };    
 
@@ -1226,7 +1237,20 @@ struct NormOp : public BaseElemWiseOp
     };
     int getRandomType(RNG& rng)
     {
-        return cvtest::randomType(rng, DEPTH_MASK_ALL_BUT_8S, 1, 4);
+        int type = cvtest::randomType(rng, DEPTH_MASK_ALL_BUT_8S, 1, 4);
+        for(;;)
+        {
+            normType = rng.uniform(1, 8);
+            if( normType == NORM_INF || normType == NORM_L1 ||
+                normType == NORM_L2 || normType == NORM_L2SQR ||
+                normType == NORM_HAMMING || normType == NORM_HAMMING2 )
+                break;
+        }
+        if( normType == NORM_HAMMING || normType == NORM_HAMMING2 )
+        {
+            type = CV_8U;
+        }
+        return type;
     }
     void op(const vector<Mat>& src, Mat& dst, const Mat& mask)
     {
@@ -1242,7 +1266,6 @@ struct NormOp : public BaseElemWiseOp
     }
     void generateScalars(int, RNG& rng)
     {
-        normType = 1 << rng.uniform(0, 3);
     }
     double getMaxErr(int)
     {
@@ -1341,11 +1364,11 @@ TEST_P(ElemWiseTest, accuracy)
         
         double maxErr = op->getMaxErr(depth);
         vector<int> pos;
-        ASSERT_PRED_FORMAT2(cvtest::MatComparator(maxErr, op->context), dst0, dst) << "\nsrc[0] ~ " << cvtest::MatInfo(!src.empty() ? src[0] : Mat()) << "\ntestCase #" << testIdx << "\n";
+		ASSERT_PRED_FORMAT2(cvtest::MatComparator(maxErr, op->context), dst0, dst) << "\nsrc[0] ~ " << cvtest::MatInfo(!src.empty() ? src[0] : Mat()) << "\ntestCase #" << testIdx << "\n";
     }
 }
 
-
+ 
 INSTANTIATE_TEST_CASE_P(Core_Copy, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::CopyOp)));
 INSTANTIATE_TEST_CASE_P(Core_Set, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::SetOp)));
 INSTANTIATE_TEST_CASE_P(Core_SetZero, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::SetZeroOp)));
@@ -1401,5 +1424,102 @@ INSTANTIATE_TEST_CASE_P(Core_Norm, ElemWiseTest, ::testing::Values(ElemWiseOpPtr
 INSTANTIATE_TEST_CASE_P(Core_MinMaxLoc, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::MinMaxLocOp)));
 INSTANTIATE_TEST_CASE_P(Core_CartToPolarToCart, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::CartToPolarToCartOp)));
 
+
+class CV_ArithmMaskTest : public cvtest::BaseTest
+{
+public:
+    CV_ArithmMaskTest() {}
+    ~CV_ArithmMaskTest() {}   
+protected:
+    void run(int)
+    {
+        try
+        {
+            RNG& rng = theRNG();
+            const int MAX_DIM=3;
+            int sizes[MAX_DIM];
+            for( int iter = 0; iter < 100; iter++ )
+            {
+                //ts->printf(cvtest::TS::LOG, ".");
+                
+                ts->update_context(this, iter, true);
+                int k, dims = rng.uniform(1, MAX_DIM+1), p = 1;
+                int depth = rng.uniform(CV_8U, CV_64F+1);
+                int cn = rng.uniform(1, 6);
+                int type = CV_MAKETYPE(depth, cn);
+                int op = rng.uniform(0, 5);
+                int depth1 = op <= 1 ? CV_64F : depth;
+                for( k = 0; k < dims; k++ )
+                {
+                    sizes[k] = rng.uniform(1, 30);
+                    p *= sizes[k];
+                }
+                Mat a(dims, sizes, type), a1;
+                Mat b(dims, sizes, type), b1;
+                Mat mask(dims, sizes, CV_8U);
+                Mat mask1;
+                Mat c, d;
+                
+                rng.fill(a, RNG::UNIFORM, 0, 100);
+                rng.fill(b, RNG::UNIFORM, 0, 100);
+                
+                // [-2,2) range means that the each generated random number
+                // will be one of -2, -1, 0, 1. Saturated to [0,255], it will become
+                // 0, 0, 0, 1 => the mask will be filled by ~25%.
+                rng.fill(mask, RNG::UNIFORM, -2, 2);
+                
+                a.convertTo(a1, depth1);
+                b.convertTo(b1, depth1);
+                // invert the mask
+                compare(mask, 0, mask1, CMP_EQ);
+                a1.setTo(0, mask1);
+                b1.setTo(0, mask1);
+
+                if( op == 0 )
+                {
+                    add(a, b, c, mask);
+                    add(a1, b1, d);
+                }
+                else if( op == 1 )
+                {
+                    subtract(a, b, c, mask);
+                    subtract(a1, b1, d);
+                }
+                else if( op == 2 )
+                {
+                    bitwise_and(a, b, c, mask);
+                    bitwise_and(a1, b1, d);
+                }
+                else if( op == 3 )
+                {
+                    bitwise_or(a, b, c, mask);
+                    bitwise_or(a1, b1, d);
+                }
+                else if( op == 4 )
+                {
+                    bitwise_xor(a, b, c, mask);
+                    bitwise_xor(a1, b1, d);
+                }
+                Mat d1;
+                d.convertTo(d1, depth);
+                CV_Assert( norm(c, d1, CV_C) <= DBL_EPSILON );
+            }
+            
+            Mat_<uchar> tmpSrc(100,100);
+            tmpSrc = 124;
+            Mat_<uchar> tmpMask(100,100);
+            tmpMask = 255;
+            Mat_<uchar> tmpDst(100,100);
+            tmpDst = 2;
+            tmpSrc.copyTo(tmpDst,tmpMask);
+        }
+        catch(...)
+        {
+           ts->set_failed_test_info(cvtest::TS::FAIL_MISMATCH);
+        }
+    }
+};
+
+TEST(Core_ArithmMask, uninitialized) { CV_ArithmMaskTest test; test.safe_run(); }
 
 

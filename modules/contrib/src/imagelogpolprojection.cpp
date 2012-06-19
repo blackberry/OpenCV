@@ -177,7 +177,7 @@ bool ImageLogPolProjection::_initLogRetinaSampling(const double reductionFactor,
 #endif
 
 	// setup progressive prefilter that will be applied BEFORE log sampling
-	setProgressiveFilterConstants_CentredAccuracy(0.0, 0.0, 0.99);
+	setProgressiveFilterConstants_CentredAccuracy(0.f, 0.f, 0.99f);
 
 	// (re)create the image output buffer and transform table if the reduction factor changed
 	_sampledFrame.resize(_outputNBpixels*(1+(unsigned int)_colorModeCapable*2));
@@ -338,7 +338,7 @@ bool ImageLogPolProjection::_initLogPolarCortexSampling(const double reductionFa
 #endif
 
 	// setup progressive prefilter that will be applied BEFORE log sampling
-	setProgressiveFilterConstants_CentredAccuracy(0.0, 0.0, 0.99);
+	setProgressiveFilterConstants_CentredAccuracy(0.f, 0.f, 0.99f);
 
 	// (re)create the image output buffer and transform table if the reduction factor changed
 	_sampledFrame.resize(_outputNBpixels*(1+(unsigned int)_colorModeCapable*2));
@@ -394,7 +394,7 @@ bool ImageLogPolProjection::_initLogPolarCortexSampling(const double reductionFa
 }
 
 // action function
-std::valarray<double> &ImageLogPolProjection::runProjection(const std::valarray<double> &inputFrame, const double colorMode)
+std::valarray<float> &ImageLogPolProjection::runProjection(const std::valarray<float> &inputFrame, const bool colorMode)
 {
 	if (_colorModeCapable&&colorMode)
 	{

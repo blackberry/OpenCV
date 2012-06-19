@@ -1,15 +1,28 @@
+'''
+Camshift tracker
+================
+
+This is a demo that shows mean-shift based tracking
+You select a color objects such as your face and it tracks it.
+This reads from video camera (0 by default, or the camera number the user enters)
+
+http://www.robinhewitt.com/research/track/camshift.html
+
+Usage:
+------
+    camshift.py [<video source>]
+
+    To initialize tracking, select the object with mouse
+  
+Keys:
+-----
+    ESC   - exit
+    b     - toggle back-projected probability visualization
+'''
+
 import numpy as np
 import cv2
 import video
-
-help_message = '''USAGE: camshift.py [<video source>]
-
-Select a bright colored object to track.
-
-Keys:
-  ESC   - exit
-  b     - toggle back-projected probability visualization
-'''
 
 
 class App(object):
@@ -58,7 +71,7 @@ class App(object):
             ret, self.frame = self.cam.read()
             vis = self.frame.copy()
             hsv = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
-            mask = cv2.inRange(hsv, np.array((0, 60, 32)), np.array((180, 255, 255)))
+            mask = cv2.inRange(hsv, np.array((0., 60., 32.)), np.array((180., 255., 255.)))
 
             if self.selection:
                 x0, y0, x1, y1 = self.selection
@@ -88,17 +101,18 @@ class App(object):
                 
             cv2.imshow('camshift', vis)
 
-            ch = cv2.waitKey(5)
+            ch = 0xFF & cv2.waitKey(5)
             if ch == 27:
                 break
             if ch == ord('b'):
                 self.show_backproj = not self.show_backproj
+        cv2.destroyAllWindows() 			
 
 
 if __name__ == '__main__':
     import sys
     try: video_src = sys.argv[1]
-    except: video_src = video.presets['chess']
-    print help_message
+    except: video_src = 0
+    print __doc__
     App(video_src).run()
 

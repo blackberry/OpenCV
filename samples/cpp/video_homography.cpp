@@ -39,7 +39,6 @@ namespace
             {
                 Point2f pt_new = query[matches[i].queryIdx].pt;
                 Point2f pt_old = train[matches[i].trainIdx].pt;
-                Point2f dist = pt_new - pt_old;
 
                 cv::line(img, pt_new, pt_old, Scalar(125, 255, 125), 1);
                 cv::circle(img, pt_new, 2, Scalar(255, 0, 125), 1);
@@ -141,7 +140,7 @@ int main(int ac, char ** av)
 
     vector<DMatch> matches;
 
-    BruteForceMatcher<Hamming> desc_matcher;
+    BFMatcher desc_matcher(NORM_HAMMING);
 
     vector<Point2f> train_pts, query_pts;
     vector<KeyPoint> train_kpts, query_kpts;

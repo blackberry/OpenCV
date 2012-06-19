@@ -2,22 +2,79 @@
 #  CMake file for zlib. See root CMakeLists.txt
 #
 # ----------------------------------------------------------------------------
-PROJECT(zlib)
 
-# List of C++ files:
+project(${ZLIB_LIBRARY} C)
 
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
+include(CheckTypeSize)
+include(CheckFunctionExists)
+include(CheckIncludeFile)
+include(CheckCSourceCompiles)
 
-file(GLOB lib_srcs *.c)
-file(GLOB lib_hdrs *.h)
+#
+# Check to see if we have large file support
+#
+check_type_size(off64_t OFF64_T)
+if(HAVE_OFF64_T)
+  add_definitions(-D_LARGEFILE64_SOURCE=1)
+endif()
 
-set(the_target "zlib")
+#
+# Check for fseeko
+#
+check_function_exists(fseeko HAVE_FSEEKO)
+if(NOT HAVE_FSEEKO)
+  add_definitions(-DNO_FSEEKO)
+endif()
 
-add_library(${the_target} STATIC ${lib_srcs} ${lib_hdrs})
+#
+# Check for unistd.h
+#
+check_include_file(unistd.h Z_HAVE_UNISTD_H)
 
 if(MSVC)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
+  add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
+  add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE)
 endif()
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/zconf.h.cmakein"
+               "${CMAKE_CURRENT_BINARY_DIR}/zconf.h" @ONLY)
+ocv_include_directories("${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
+
+set(ZLIB_PUBLIC_HDRS
+    "${CMAKE_CURRENT_BINARY_DIR}/zconf.h"
+    zlib.h
+)
+set(ZLIB_PRIVATE_HDRS
+    crc32.h
+    deflate.h
+    gzguts.h
+    inffast.h
+    inffixed.h
+    inflate.h
+    inftrees.h
+    trees.h
+    zutil.h
+)
+set(ZLIB_SRCS
+    adler32.c
+    compress.c
+    crc32.c
+    deflate.c
+    gzclose.c
+    gzlib.c
+    gzread.c
+    gzwrite.c
+    inflate.c
+    infback.c
+    inftrees.c
+    inffast.c
+    trees.c
+    uncompr.c
+    zutil.c
+)
+
+add_library(${ZLIB_LIBRARY} STATIC ${ZLIB_SRCS} ${ZLIB_PUBLIC_HDRS} ${ZLIB_PRIVATE_HDRS})
+set_target_properties(${ZLIB_LIBRARY} PROPERTIES DEFINE_SYMBOL ZLIB_DLL)
 
 if(UNIX)
   if(CMAKE_COMPILER_IS_GNUCXX OR CV_ICC)
@@ -25,18 +82,23 @@ if(UNIX)
   endif()
 endif()
 
-set_target_properties(${the_target}
-    PROPERTIES
-        OUTPUT_NAME "${the_target}"
+if(MSVC AND NOT ENABLE_NOISY_WARNINGS)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /wd4013")
+endif()
+
+set_target_properties(${ZLIB_LIBRARY} PROPERTIES
+        OUTPUT_NAME ${ZLIB_LIBRARY}
         DEBUG_POSTFIX "${OPENCV_DEBUG_POSTFIX}"
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/3rdparty/${OPENCV_LIB_INSTALL_PATH}"
     )
 
 if(ENABLE_SOLUTION_FOLDERS)
-	set_target_properties(${the_target} PROPERTIES FOLDER "3rdparty")
+  set_target_properties(${ZLIB_LIBRARY} PROPERTIES FOLDER "3rdparty")
 endif()
 	
 if(NOT BUILD_SHARED_LIBS)
-    install(TARGETS ${the_target}
-	    ARCHIVE DESTINATION share/OpenCV/3rdparty/${OPENCV_LIB_INSTALL_PATH} COMPONENT main)
+  install(TARGETS ${ZLIB_LIBRARY} ARCHIVE DESTINATION share/OpenCV/3rdparty/${OPENCV_LIB_INSTALL_PATH} COMPONENT main)
 endif()
+
+ocv_parse_header2(ZLIB "${CMAKE_CURRENT_SOURCE_DIR}/zlib.h" ZLIB_VERSION PARENT_SCOPE)
+

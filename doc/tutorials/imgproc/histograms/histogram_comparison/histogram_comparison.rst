@@ -45,7 +45,7 @@ Theory
     
         .. math::
     
-           d(H_1,H_2) =  \sum _I  \frac{\left(H_1(I)-H_2(I)\right)^2}{H_1(I)+H_2(I)} 
+           d(H_1,H_2) =  \sum _I  \frac{\left(H_1(I)-H_2(I)\right)^2}{H_1(I)} 
      
     
      c. **Intersection ( method=CV\_COMP\_INTERSECT )**
@@ -80,7 +80,7 @@ Code
         * Display the numerical matching parameters obtained.
 
    * **Downloadable code**: 
-     Click `here <https://code.ros.org/svn/opencv/trunk/opencv/samples/cpp/tutorial_code/Histograms_Matching/compareHist_Demo.cpp>`_ 
+     Click `here <http://code.opencv.org/svn/opencv/trunk/opencv/samples/cpp/tutorial_code/Histograms_Matching/compareHist_Demo.cpp>`_ 
 
    * **Code at glance:**
 

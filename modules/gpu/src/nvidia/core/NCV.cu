@@ -1,7 +1,7 @@
 /*M///////////////////////////////////////////////////////////////////////////////////////
 //
-// IMPORTANT: READ BEFORE DOWNLOADING, COPYING, INSTALLING OR USING. 
-// 
+// IMPORTANT: READ BEFORE DOWNLOADING, COPYING, INSTALLING OR USING.
+//
 //  By downloading, copying, installing or using the software you agree to this license.
 //  If you do not agree to this license, do not download, install,
 //  copy or use the software.
@@ -40,10 +40,9 @@
 //M*/
 
 
-#include <ios>
-#include <stdarg.h>
+#include <iostream>
+#include <string>
 #include <vector>
-#include <cstdio>
 #include "NCV.hpp"
 
 using namespace std;
@@ -56,24 +55,18 @@ using namespace std;
 //==============================================================================
 
 
-static void stdioDebugOutput(const char *msg)
+static void stdDebugOutput(const string &msg)
 {
-    printf("%s", msg);
+    cout << msg;
 }
 
 
-static NCVDebugOutputHandler *debugOutputHandler = stdioDebugOutput;
+static NCVDebugOutputHandler *debugOutputHandler = stdDebugOutput;
 
 
-void ncvDebugOutput(const char *msg, ...)
+void ncvDebugOutput(const string &msg)
 {
-    const int K_DEBUG_STRING_MAXLEN = 1024;
-    char buffer[K_DEBUG_STRING_MAXLEN];
-    va_list args;
-    va_start(args, msg);
-    vsnprintf(buffer, K_DEBUG_STRING_MAXLEN, msg, args);
-    va_end (args);
-    debugOutputHandler(buffer);
+    debugOutputHandler(msg);
 }
 
 
@@ -285,10 +278,11 @@ NCVMemStackAllocator::NCVMemStackAllocator(NCVMemoryType memT, size_t capacity, 
 {
     NcvBool bProperAlignment = (alignment & (alignment-1)) == 0;
     ncvAssertPrintCheck(bProperAlignment, "NCVMemStackAllocator ctor:: _alignment not power of 2");
+    ncvAssertPrintCheck(memT != NCVMemoryTypeNone, "NCVMemStackAllocator ctor:: Incorrect allocator type");
 
     allocBegin = NULL;
 
-    if (reusePtr == NULL)
+    if (reusePtr == NULL && capacity != 0)
     {
         bReusesMemory = false;
         switch (memT)
@@ -302,6 +296,7 @@ NCVMemStackAllocator::NCVMemStackAllocator(NCVMemoryType memT, size_t capacity, 
         case NCVMemoryTypeHostPageable:
             allocBegin = (Ncv8u *)malloc(capacity);
             break;
+        default:;
         }
     }
     else
@@ -329,7 +324,7 @@ NCVMemStackAllocator::~NCVMemStackAllocator()
     {
         ncvAssertPrintCheck(currentSize == 0, "NCVMemStackAllocator dtor:: not all objects were deallocated properly, forcing destruction");
 
-        if (!bReusesMemory)
+        if (!bReusesMemory && (allocBegin != (Ncv8u *)(0x1)))
         {
             switch (_memType)
             {
@@ -342,6 +337,7 @@ NCVMemStackAllocator::~NCVMemStackAllocator()
             case NCVMemoryTypeHostPageable:
                 free(allocBegin);
                 break;
+            default:;
             }
         }
 
@@ -462,6 +458,7 @@ NCVStatus NCVMemNativeAllocator::alloc(NCVMemSegment &seg, size_t size)
     case NCVMemoryTypeHostPageable:
         seg.begin.ptr = (Ncv8u *)malloc(size);
         break;
+    default:;
     }
 
     this->currentSize += alignUp(static_cast<Ncv32u>(size), this->_alignment);
@@ -494,6 +491,7 @@ NCVStatus NCVMemNativeAllocator::dealloc(NCVMemSegment &seg)
     case NCVMemoryTypeHostPageable:
         free(seg.begin.ptr);
         break;
+    default:;
     }
 
     seg.clear();
@@ -575,13 +573,13 @@ typedef struct _NcvTimeMoment NcvTimeMoment;
         return 1000.0 * 2 * ((t2->moment) - (t1->moment)) / (t1->freq + t2->freq);
     }
 
-#elif defined(__GNUC__) 
+#elif defined(__GNUC__)
 
     #include <sys/time.h>
 
     typedef struct _NcvTimeMoment
     {
-        struct timeval tv; 
+        struct timeval tv;
         struct timezone tz;
     } NcvTimeMoment;
 
@@ -876,7 +874,7 @@ static NCVStatus drawRectsWrapperDevice(T *d_dst,
 
     drawRects<T><<<grid, block>>>(d_dst, dstStride, dstWidth, dstHeight, d_rects, numRects, color);
 
-    ncvAssertCUDAReturn(cudaGetLastError(), NCV_CUDA_ERROR);
+    ncvAssertCUDALastErrorReturn(NCV_CUDA_ERROR);
 
     return NCV_SUCCESS;
 }

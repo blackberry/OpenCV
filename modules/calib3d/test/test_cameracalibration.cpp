@@ -333,6 +333,7 @@ void CV_CameraCalibrationTest::run( int start_from )
     goodTransVects  = 0;
     goodRotMatrs    = 0;
     int progress = 0;
+    int values_read = -1;
 
     sprintf( filepath, "%scameracalibration/", ts->get_data_path().c_str() );
     sprintf( filename, "%sdatafiles.txt", filepath );
@@ -344,11 +345,13 @@ void CV_CameraCalibrationTest::run( int start_from )
         goto _exit_;
     }
 
-    fscanf(datafile,"%d",&numTests);
+    values_read = fscanf(datafile,"%d",&numTests);
+    CV_Assert(values_read == 1);
 
     for( currTest = start_from; currTest < numTests; currTest++ )
     {
-        fscanf(datafile,"%s",i_dat_file);
+        values_read = fscanf(datafile,"%s",i_dat_file);
+        CV_Assert(values_read == 1);
         sprintf(filename, "%s%s", filepath, i_dat_file);
         file = fopen(filename,"r");
 
@@ -366,7 +369,8 @@ void CV_CameraCalibrationTest::run( int start_from )
             continue; // if there is more than one test, just skip the test
         }
 
-        fscanf(file,"%d %d\n",&(imageSize.width),&(imageSize.height));
+        values_read = fscanf(file,"%d %d\n",&(imageSize.width),&(imageSize.height));
+        CV_Assert(values_read == 2);
         if( imageSize.width <= 0 || imageSize.height <= 0 )
         {
             ts->printf( cvtest::TS::LOG, "Image size in test file is incorrect\n" );
@@ -375,7 +379,8 @@ void CV_CameraCalibrationTest::run( int start_from )
         }
 
         /* Read etalon size */
-        fscanf(file,"%d %d\n",&(etalonSize.width),&(etalonSize.height));
+        values_read = fscanf(file,"%d %d\n",&(etalonSize.width),&(etalonSize.height));
+        CV_Assert(values_read == 2);
         if( etalonSize.width <= 0 || etalonSize.height <= 0 )
         {
             ts->printf( cvtest::TS::LOG, "Pattern size in test file is incorrect\n" );
@@ -386,7 +391,8 @@ void CV_CameraCalibrationTest::run( int start_from )
         numPoints = etalonSize.width * etalonSize.height;
 
         /* Read number of images */
-        fscanf(file,"%d\n",&numImages);
+        values_read = fscanf(file,"%d\n",&numImages);
+        CV_Assert(values_read == 1);
         if( numImages <=0 )
         {
             ts->printf( cvtest::TS::LOG, "Number of images in test file is incorrect\n");
@@ -427,7 +433,8 @@ void CV_CameraCalibrationTest::run( int start_from )
             for( currPoint = 0; currPoint < numPoints; currPoint++ )
             {
                 double x,y,z;
-                fscanf(file,"%lf %lf %lf\n",&x,&y,&z);
+                values_read = fscanf(file,"%lf %lf %lf\n",&x,&y,&z);
+                CV_Assert(values_read == 3);
 
                 (objectPoints+i)->x = x;
                 (objectPoints+i)->y = y;
@@ -443,7 +450,8 @@ void CV_CameraCalibrationTest::run( int start_from )
             for( currPoint = 0; currPoint < numPoints; currPoint++ )
             {
                 double x,y;
-                fscanf(file,"%lf %lf\n",&x,&y);
+                values_read = fscanf(file,"%lf %lf\n",&x,&y);
+                CV_Assert(values_read == 2);
 
                 (imagePoints+i)->x = x;
                 (imagePoints+i)->y = y;
@@ -455,32 +463,40 @@ void CV_CameraCalibrationTest::run( int start_from )
 
         /* Focal lengths */
         double goodFcx,goodFcy;
-        fscanf(file,"%lf %lf",&goodFcx,&goodFcy);
+        values_read = fscanf(file,"%lf %lf",&goodFcx,&goodFcy);
+        CV_Assert(values_read == 2);
 
         /* Principal points */
         double goodCx,goodCy;
-        fscanf(file,"%lf %lf",&goodCx,&goodCy);
+        values_read = fscanf(file,"%lf %lf",&goodCx,&goodCy);
+        CV_Assert(values_read == 2);
 
         /* Read distortion */
 
-        fscanf(file,"%lf",goodDistortion+0);
-        fscanf(file,"%lf",goodDistortion+1);
-        fscanf(file,"%lf",goodDistortion+2);
-        fscanf(file,"%lf",goodDistortion+3);
+        values_read = fscanf(file,"%lf",goodDistortion+0); CV_Assert(values_read == 1);
+        values_read = fscanf(file,"%lf",goodDistortion+1); CV_Assert(values_read == 1);
+        values_read = fscanf(file,"%lf",goodDistortion+2); CV_Assert(values_read == 1);
+        values_read = fscanf(file,"%lf",goodDistortion+3); CV_Assert(values_read == 1);
 
         /* Read good Rot matrixes */
         for( currImage = 0; currImage < numImages; currImage++ )
         {
             for( i = 0; i < 3; i++ )
                 for( j = 0; j < 3; j++ )
-                    fscanf(file, "%lf", goodRotMatrs + currImage * 9 + j * 3 + i);
+                {
+                    values_read = fscanf(file, "%lf", goodRotMatrs + currImage * 9 + j * 3 + i);
+                    CV_Assert(values_read == 1);
+                }
         }
 
         /* Read good Trans vectors */
         for( currImage = 0; currImage < numImages; currImage++ )
         {
             for( i = 0; i < 3; i++ )
-                fscanf(file, "%lf", goodTransVects + currImage * 3 + i);
+            {
+                values_read = fscanf(file, "%lf", goodTransVects + currImage * 3 + i);
+                CV_Assert(values_read == 1);
+            }
         }
 
         calibFlags = 0
@@ -1071,7 +1087,6 @@ void CV_ProjectPointsTest::run(int)
 		validImgPoint.y = static_cast<float>((double)cameraMatrix(1,1)*(y*cdist + (double)distCoeffs(0,2)*a3 + distCoeffs(0,3)*a1)
             + (double)cameraMatrix(1,2));
 
-        Point2f ssdfp = *it;
         if( fabs(it->x - validImgPoint.x) > imgPointErr ||
             fabs(it->y - validImgPoint.y) > imgPointErr )
 		{
@@ -1283,6 +1298,12 @@ protected:
 	virtual bool rectifyUncalibrated( const Mat& points1,
 		const Mat& points2, const Mat& F, Size imgSize,
 		Mat& H1, Mat& H2, double threshold=5 ) = 0;
+	virtual void triangulate( const Mat& P1, const Mat& P2,
+        const Mat &points1, const Mat &points2,
+        Mat &points4D ) = 0;
+	virtual void correct( const Mat& F,
+        const Mat &points1, const Mat &points2,
+        Mat &newPoints1, Mat &newPoints2 ) = 0;
 
 	void run(int);
 };
@@ -1479,6 +1500,91 @@ void CV_StereoCalibrationTest::run( int )
 			return;
 		}
 
+        //check that Tx after rectification is equal to distance between cameras
+        double tx = fabs(P2.at<double>(0, 3) / P2.at<double>(0, 0));
+        if (fabs(tx - norm(T)) > 1e-5)
+        {
+			ts->set_failed_test_info( cvtest::TS::FAIL_BAD_ACCURACY );
+			return;
+        }
+
+        //check that Q reprojects points before the camera
+        double testPoint[4] = {0.0, 0.0, 100.0, 1.0};
+        Mat reprojectedTestPoint = Q * Mat_<double>(4, 1, testPoint);
+        CV_Assert(reprojectedTestPoint.type() == CV_64FC1);
+        if( reprojectedTestPoint.at<double>(2) / reprojectedTestPoint.at<double>(3) < 0 )
+        {
+			ts->printf( cvtest::TS::LOG, "A point after rectification is reprojected behind the camera, testcase %d\n", testcase);
+			ts->set_failed_test_info( cvtest::TS::FAIL_INVALID_OUTPUT );
+        }
+
+        //check that Q reprojects the same points as reconstructed by triangulation
+        const float minCoord = -300.0f;
+        const float maxCoord = 300.0f;
+        const float minDisparity = 0.1f;
+        const float maxDisparity = 600.0f;
+        const int pointsCount = 500;
+        const float requiredAccuracy = 1e-3f;
+        RNG& rng = ts->get_rng();
+
+        Mat projectedPoints_1(2, pointsCount, CV_32FC1);
+        Mat projectedPoints_2(2, pointsCount, CV_32FC1);
+        Mat disparities(1, pointsCount, CV_32FC1);
+
+        rng.fill(projectedPoints_1, RNG::UNIFORM, minCoord, maxCoord);
+        rng.fill(disparities, RNG::UNIFORM, minDisparity, maxDisparity);
+        projectedPoints_2.row(0) = projectedPoints_1.row(0) - disparities;
+        Mat ys_2 = projectedPoints_2.row(1);
+        projectedPoints_1.row(1).copyTo(ys_2);
+
+        Mat points4d;
+        triangulate(P1, P2, projectedPoints_1, projectedPoints_2, points4d);
+        Mat homogeneousPoints4d = points4d.t();
+        const int dimension = 4;
+        homogeneousPoints4d = homogeneousPoints4d.reshape(dimension);
+        Mat triangulatedPoints;
+        convertPointsFromHomogeneous(homogeneousPoints4d, triangulatedPoints);
+
+        Mat sparsePoints;
+        sparsePoints.push_back(projectedPoints_1);
+        sparsePoints.push_back(disparities);
+        sparsePoints = sparsePoints.t();
+        sparsePoints = sparsePoints.reshape(3);
+        Mat reprojectedPoints;
+        perspectiveTransform(sparsePoints, reprojectedPoints, Q);
+
+        if (norm(triangulatedPoints - reprojectedPoints) / sqrt((double)pointsCount) > requiredAccuracy)
+        {
+			ts->printf( cvtest::TS::LOG, "Points reprojected with a matrix Q and points reconstructed by triangulation are different, testcase %d\n", testcase);
+			ts->set_failed_test_info( cvtest::TS::FAIL_INVALID_OUTPUT );
+        }
+
+        //check correctMatches
+        const float constraintAccuracy = 1e-5f;
+        Mat newPoints1, newPoints2;
+        Mat points1 = projectedPoints_1.t();
+        points1 = points1.reshape(2, 1);
+        Mat points2 = projectedPoints_2.t();
+        points2 = points2.reshape(2, 1);
+        correctMatches(F, points1, points2, newPoints1, newPoints2);
+        Mat newHomogeneousPoints1, newHomogeneousPoints2;
+        convertPointsToHomogeneous(newPoints1, newHomogeneousPoints1);
+        convertPointsToHomogeneous(newPoints2, newHomogeneousPoints2);
+        newHomogeneousPoints1 = newHomogeneousPoints1.reshape(1);
+        newHomogeneousPoints2 = newHomogeneousPoints2.reshape(1);
+        Mat typedF;
+        F.convertTo(typedF, newHomogeneousPoints1.type());
+        for (int i = 0; i < newHomogeneousPoints1.rows; ++i)
+        {
+            Mat error = newHomogeneousPoints2.row(i) * typedF * newHomogeneousPoints1.row(i).t();
+            CV_Assert(error.rows == 1 && error.cols == 1);
+            if (norm(error) > constraintAccuracy)
+            {
+                ts->printf( cvtest::TS::LOG, "Epipolar constraint is violated after correctMatches, testcase %d\n", testcase);
+                ts->set_failed_test_info( cvtest::TS::FAIL_INVALID_OUTPUT );
+            }
+        }
+
 		// rectifyUncalibrated
 		CV_Assert( imgpt1.size() == imgpt2.size() );
 		Mat _imgpt1( total, 1, CV_32FC2 ), _imgpt2( total, 1, CV_32FC2 );
@@ -1571,6 +1677,12 @@ protected:
 	virtual bool rectifyUncalibrated( const Mat& points1,
 		const Mat& points2, const Mat& F, Size imgSize,
 		Mat& H1, Mat& H2, double threshold=5 );
+	virtual void triangulate( const Mat& P1, const Mat& P2,
+        const Mat &points1, const Mat &points2,
+        Mat &points4D );
+	virtual void correct( const Mat& F,
+        const Mat &points1, const Mat &points2,
+        Mat &newPoints1, Mat &newPoints2 );
 };
 
 double CV_StereoCalibrationTest_C::calibrateStereoCamera( const vector<vector<Point3f> >& objectPoints,
@@ -1654,6 +1766,26 @@ bool CV_StereoCalibrationTest_C::rectifyUncalibrated( const Mat& points1,
 	return cvStereoRectifyUncalibrated(&_pt1, &_pt2, pF, imgSize, &_H1, &_H2, threshold) > 0;
 }
 
+void CV_StereoCalibrationTest_C::triangulate( const Mat& P1, const Mat& P2,
+        const Mat &points1, const Mat &points2,
+        Mat &points4D )
+{
+    CvMat _P1 = P1, _P2 = P2, _points1 = points1, _points2 = points2;
+    points4D.create(4, points1.cols, points1.type());
+    CvMat _points4D = points4D;
+    cvTriangulatePoints(&_P1, &_P2, &_points1, &_points2, &_points4D);
+}
+
+void CV_StereoCalibrationTest_C::correct( const Mat& F,
+        const Mat &points1, const Mat &points2,
+        Mat &newPoints1, Mat &newPoints2 )
+{
+    CvMat _F = F, _points1 = points1, _points2 = points2;
+    newPoints1.create(1, points1.cols, points1.type());
+    newPoints2.create(1, points2.cols, points2.type());
+    CvMat _newPoints1 = newPoints1, _newPoints2 = newPoints2;
+    cvCorrectMatches(&_F, &_points1, &_points2, &_newPoints1, &_newPoints2);
+}
 
 //-------------------------------- CV_StereoCalibrationTest_CPP ------------------------------
 
@@ -1678,6 +1810,12 @@ protected:
 	virtual bool rectifyUncalibrated( const Mat& points1,
 		const Mat& points2, const Mat& F, Size imgSize,
 		Mat& H1, Mat& H2, double threshold=5 );
+	virtual void triangulate( const Mat& P1, const Mat& P2,
+        const Mat &points1, const Mat &points2,
+        Mat &points4D );
+    virtual void correct( const Mat& F,
+        const Mat &points1, const Mat &points2,
+        Mat &newPoints1, Mat &newPoints2 );
 };
 
 double CV_StereoCalibrationTest_CPP::calibrateStereoCamera( const vector<vector<Point3f> >& objectPoints,
@@ -1708,6 +1846,20 @@ bool CV_StereoCalibrationTest_CPP::rectifyUncalibrated( const Mat& points1,
 					   const Mat& points2, const Mat& F, Size imgSize, Mat& H1, Mat& H2, double threshold )
 {
 	return stereoRectifyUncalibrated( points1, points2, F, imgSize, H1, H2, threshold );
+}
+
+void CV_StereoCalibrationTest_CPP::triangulate( const Mat& P1, const Mat& P2,
+        const Mat &points1, const Mat &points2,
+        Mat &points4D )
+{
+    triangulatePoints(P1, P2, points1, points2, points4D);
+}
+
+void CV_StereoCalibrationTest_CPP::correct( const Mat& F,
+        const Mat &points1, const Mat &points2,
+        Mat &newPoints1, Mat &newPoints2 )
+{
+    correctMatches(F, points1, points2, newPoints1, newPoints2);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

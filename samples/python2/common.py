@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import os
+from contextlib import contextmanager
 
 image_extensions = ['.bmp', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.pbm', '.pgm', '.ppm']
 
@@ -55,8 +56,8 @@ def mtx2rvec(R):
     return axis * np.arctan2(s, c)
 
 def draw_str(dst, (x, y), s):
-    cv2.putText(dst, s, (x+1, y+1), cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 0), thickness = 2, linetype=cv2.CV_AA)
-    cv2.putText(dst, s, (x, y), cv2.FONT_HERSHEY_PLAIN, 1.0, (255, 255, 255), linetype=cv2.CV_AA)
+    cv2.putText(dst, s, (x+1, y+1), cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 0), thickness = 2, lineType=cv2.CV_AA)
+    cv2.putText(dst, s, (x, y), cv2.FONT_HERSHEY_PLAIN, 1.0, (255, 255, 255), lineType=cv2.CV_AA)
 
 class Sketcher:
     def __init__(self, windowname, dests, colors_func):
@@ -115,3 +116,57 @@ def nothing(*arg, **kw):
 
 def clock():
     return cv2.getTickCount() / cv2.getTickFrequency()
+
+@contextmanager
+def Timer(msg):
+    print msg, '...',
+    start = clock()
+    try:
+        yield
+    finally:
+        print "%.2f ms" % ((clock()-start)*1000)
+
+class StatValue:
+    def __init__(self, smooth_coef = 0.5):
+        self.value = None
+        self.smooth_coef = smooth_coef
+    def update(self, v):
+        if self.value is None:
+            self.value = v
+        else:
+            c = self.smooth_coef
+            self.value = c * self.value + (1.0-c) * v
+
+class RectSelector:
+    def __init__(self, win, callback):
+        self.win = win
+        self.callback = callback
+        cv2.setMouseCallback(win, self.onmouse)
+        self.drag_start = None
+        self.drag_rect = None
+    def onmouse(self, event, x, y, flags, param):
+        x, y = np.int16([x, y]) # BUG
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.drag_start = (x, y)
+        if self.drag_start: 
+            if flags & cv2.EVENT_FLAG_LBUTTON:
+                #h, w = self.frame.shape[:2]
+                xo, yo = self.drag_start
+                x0, y0 = np.minimum([xo, yo], [x, y])
+                x1, y1 = np.maximum([xo, yo], [x, y])
+                #x0, y0 = np.maximum(0, np.minimum([xo, yo], [x, y]))
+                #x1, y1 = np.minimum([w, h], np.maximum([xo, yo], [x, y]))
+                self.drag_rect = None
+                if x1-x0 > 0 and y1-y0 > 0:
+                    self.drag_rect = (x0, y0, x1, y1)
+            else:
+                rect = self.drag_rect
+                self.drag_start = None
+                self.drag_rect = None
+                if rect:
+                    self.callback(rect)
+    def draw(self, vis):
+        if not self.drag_rect:
+            return
+        x0, y0, x1, y1 = self.drag_rect
+        cv2.rectangle(vis, (x0, y0), (x1, y1), (0, 255, 0), 2)

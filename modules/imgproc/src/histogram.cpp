@@ -1350,7 +1350,18 @@ void cv::calcBackProject( InputArrayOfArrays images, const vector<int>& channels
                           const vector<float>& ranges,
                           double scale )
 {
-    Mat H = hist.getMat();
+    Mat H0 = hist.getMat(), H;
+    int hcn = H0.channels();
+    if( hcn > 1 )
+    {
+        CV_Assert( H0.isContinuous() );
+        int hsz[CV_CN_MAX+1];
+        memcpy(hsz, &H0.size[0], H0.dims*sizeof(hsz[0]));
+        hsz[H0.dims] = hcn;
+        H = Mat(H0.dims+1, hsz, H0.depth(), H0.data);
+    }
+    else
+        H = H0;
     bool _1d = H.rows == 1 || H.cols == 1;
     int i, dims = H.dims, rsz = (int)ranges.size(), csz = (int)channels.size();
     int nimages = (int)images.total();
@@ -1401,8 +1412,8 @@ double cv::compareHist( InputArray _H1, InputArray _H2, int method )
             for( j = 0; j < len; j++ )
             {
                 double a = h1[j] - h2[j];
-                double b = h1[j] + h2[j];
-                if( fabs(b) > FLT_EPSILON )
+                double b = h1[j];
+                if( fabs(b) > DBL_EPSILON )
                     result += a*a/b;
             }
         }
@@ -1469,7 +1480,7 @@ double cv::compareHist( const SparseMat& H1, const SparseMat& H2, int method )
         CV_Assert( H1.size(i) == H2.size(i) );
     
     const SparseMat *PH1 = &H1, *PH2 = &H2;
-    if( PH1->nzcount() > PH2->nzcount() )
+    if( PH1->nzcount() > PH2->nzcount() && method != CV_COMP_CHISQR )
         std::swap(PH1, PH2);
     
     SparseMatConstIterator it = PH1->begin();
@@ -1482,24 +1493,10 @@ double cv::compareHist( const SparseMat& H1, const SparseMat& H2, int method )
             float v1 = it.value<float>();
             const SparseMat::Node* node = it.node();
             float v2 = PH2->value<float>(node->idx, (size_t*)&node->hashval);
-            if( !v2 )
-                result += v1;
-            else
-            {
-                double a = v1 - v2;
-                double b = v1 + v2;
-                if( b > FLT_EPSILON )
-                    result += a*a/b;
-            }
-        }
-        
-        it = PH2->begin();
-        for( i = 0; i < N2; i++, ++it )
-        {
-            float v2 = it.value<float>();
-            const SparseMat::Node* node = it.node();
-            if( !PH1->find<float>(node->idx, (size_t*)&node->hashval) )
-                result += v2;
+            double a = v1 - v2;
+            double b = v1;
+            if( fabs(b) > DBL_EPSILON )
+                result += a*a/b;
         }
     }
     else if( method == CV_COMP_CORREL )
@@ -1905,7 +1902,7 @@ cvCompareHist( const CvHistogram* hist1,
     CvSparseMatIterator iterator;
     CvSparseNode *node1, *node2;
 
-    if( mat1->heap->active_count > mat2->heap->active_count )
+    if( mat1->heap->active_count > mat2->heap->active_count && method != CV_COMP_CHISQR )
     {
         CvSparseMat* t;
         CV_SWAP( mat1, mat2, t );
@@ -1918,24 +1915,11 @@ cvCompareHist( const CvHistogram* hist1,
         {
             double v1 = *(float*)CV_NODE_VAL(mat1,node1);
             uchar* node2_data = cvPtrND( mat2, CV_NODE_IDX(mat1,node1), 0, 0, &node1->hashval );
-            if( !node2_data )
-                result += v1;
-            else
-            {
-                double v2 = *(float*)node2_data;
-                double a = v1 - v2;
-                double b = v1 + v2;
-                if( fabs(b) > DBL_EPSILON )
-                    result += a*a/b;
-            }
-        }
-
-        for( node2 = cvInitSparseMatIterator( mat2, &iterator );
-             node2 != 0; node2 = cvGetNextSparseNode( &iterator ))
-        {
-            double v2 = *(float*)CV_NODE_VAL(mat2,node2);
-            if( !cvPtrND( mat1, CV_NODE_IDX(mat2,node2), 0, 0, &node2->hashval ))
-                result += v2;
+            double v2 = node2_data ? *(float*)node2_data : 0.f;
+            double a = v1 - v2;
+            double b = v1;
+            if( fabs(b) > DBL_EPSILON )
+                result += a*a/b;
         }
     }
     else if( method == CV_COMP_CORREL )

@@ -45,7 +45,10 @@ int main(int argc, char* argv[]) {
 	std::cout<<"* Benoit A., Caplier A., Durette B., Herault, J., \"USING HUMAN VISUAL SYSTEM MODELING FOR BIO-INSPIRED LOW LEVEL IMAGE PROCESSING\", Elsevier, Computer Vision and Image Understanding 114 (2010), pp. 758-773, DOI: http://dx.doi.org/10.1016/j.cviu.2010.01.011"<<std::endl;
 	std::cout<<"* Vision: Images, Signals and Neural Networks: Models of Neural Processing in Visual Perception (Progress in Neural Processing),By: Jeanny Herault, ISBN: 9814273686. WAPI (Tower ID): 113266891."<<std::endl;
 	std::cout<<"* => reports comments/remarks at benoit.alexandre.vision@gmail.com"<<std::endl;
+	std::cout<<"* => more informations and papers at : http://sites.google.com/site/benoitalexandrevision/"<<std::endl;
 	std::cout<<"****************************************************"<<std::endl;
+	std::cout<<" NOTE : this program generates the default retina parameters file 'RetinaDefaultParameters.xml'"<<std::endl;
+	std::cout<<" => you can use this to fine tune parameters and load them if you save to file 'RetinaSpecificParameters.xml'"<<std::endl;
 
 	// basic input arguments checking
 	if (argc<2)
@@ -106,9 +109,18 @@ int main(int argc, char* argv[]) {
 
 		// if the last parameter is 'log', then activate log sampling (favour foveal vision and subsamples peripheral vision)
 		if (useLogSampling)
-			myRetina = new cv::Retina("params.xml", inputFrame.size(), true, cv::RETINA_COLOR_BAYER, true, 2.0, 10.0);
+                {
+                        myRetina = new cv::Retina(inputFrame.size(), true, cv::RETINA_COLOR_BAYER, true, 2.0, 10.0);
+                }
 		else// -> else allocate "classical" retina :
-			myRetina = new cv::Retina("params.xml", inputFrame.size());
+			myRetina = new cv::Retina(inputFrame.size());
+		
+		// save default retina parameters file in order to let you see this and maybe modify it and reload using method "setup"
+		myRetina->write("RetinaDefaultParameters.xml");
+
+		// load parameters if file exists
+		myRetina->setup("RetinaSpecificParameters.xml");
+		myRetina->clearBuffers();
 
 		// declare retina output buffers
 		cv::Mat retinaOutput_parvo;

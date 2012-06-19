@@ -1,7 +1,7 @@
 '''
 Simple example of stereo image matching and point cloud generation.
 
-Resulting .ply file cam be easily viewed using MeshLab (http://meshlab.sourceforge.net/)
+Resulting .ply file cam be easily viewed using MeshLab ( http://meshlab.sourceforge.net/ )
 '''
 
 import numpy as np
@@ -71,3 +71,4 @@ if __name__ == '__main__':
     cv2.imshow('left', imgL)
     cv2.imshow('disparity', (disp-min_disp)/num_disp)
     cv2.waitKey()
+    cv2.destroyAllWindows() 			

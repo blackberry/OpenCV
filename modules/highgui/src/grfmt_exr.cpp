@@ -589,7 +589,7 @@ bool  ExrEncoder::write( const Mat& img, const vector<int>& )
     int step = img.step;
 
     Header header( width, height );
-    PixelType type;
+    Imf::PixelType type;
 
     if(depth == 8)
         type = HALF;
@@ -719,7 +719,7 @@ bool  ExrEncoder::write( const Mat& img, const vector<int>& )
             }
             data += step;
         }
-        delete buffer;
+        delete[] buffer;
     }
 
     return result;

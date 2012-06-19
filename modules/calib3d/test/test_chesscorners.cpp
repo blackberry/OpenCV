@@ -74,23 +74,25 @@ void show_points( const Mat& gray, const Mat& u, const vector<Point2f>& v, Size 
 }
 
 
-enum Pattern { CHESSBOARD, CIRCLES_GRID };
+enum Pattern { CHESSBOARD, CIRCLES_GRID, ASYMMETRIC_CIRCLES_GRID };
 
 class CV_ChessboardDetectorTest : public cvtest::BaseTest
 {
 public:
-    CV_ChessboardDetectorTest( Pattern pattern );
+    CV_ChessboardDetectorTest( Pattern pattern, int algorithmFlags = 0 );
 protected:
     void run(int);
     void run_batch(const string& filename);
     bool checkByGenerator();
 
     Pattern pattern;
+    int algorithmFlags;
 };
 
-CV_ChessboardDetectorTest::CV_ChessboardDetectorTest( Pattern _pattern )
+CV_ChessboardDetectorTest::CV_ChessboardDetectorTest( Pattern _pattern, int _algorithmFlags )
 {
     pattern = _pattern;
+    algorithmFlags = _algorithmFlags;
 }
 
 double calcError(const vector<Point2f>& v, const Mat& u)
@@ -135,17 +137,39 @@ const double precise_success_error_level = 2;
 /* ///////////////////// chess_corner_test ///////////////////////// */
 void CV_ChessboardDetectorTest::run( int /*start_from */)
 {
+    cvtest::TS& ts = *this->ts;
+    ts.set_failed_test_info( cvtest::TS::OK );
+
     /*if (!checkByGenerator())
         return;*/
     switch( pattern )
     {
         case CHESSBOARD:
             checkByGenerator();
+            if (ts.get_err_code() != cvtest::TS::OK)
+            {
+                break;
+            }
+
+            run_batch("negative_list.dat");
+            if (ts.get_err_code() != cvtest::TS::OK)
+            {
+                break;
+            }
+
             run_batch("chessboard_list.dat");
+            if (ts.get_err_code() != cvtest::TS::OK)
+            {
+                break;
+            }
+            
             run_batch("chessboard_list_subpixel.dat");
             break;
         case CIRCLES_GRID:
             run_batch("circles_list.dat");
+            break;
+        case ASYMMETRIC_CIRCLES_GRID:
+            run_batch("acircles_list.dat");
             break;
     }
 }
@@ -153,7 +177,6 @@ void CV_ChessboardDetectorTest::run( int /*start_from */)
 void CV_ChessboardDetectorTest::run_batch( const string& filename )
 {
     cvtest::TS& ts = *this->ts;
-    ts.set_failed_test_info( cvtest::TS::OK );
 
     ts.printf(cvtest::TS::LOG, "\nRunning batch %s\n", filename.c_str());
 //#define WRITE_POINTS 1
@@ -168,6 +191,9 @@ void CV_ChessboardDetectorTest::run_batch( const string& filename )
             break;
         case CIRCLES_GRID:
             folder = string(ts.get_data_path()) + "cameracalibration/circles/";
+            break;
+        case ASYMMETRIC_CIRCLES_GRID:
+            folder = string(ts.get_data_path()) + "cameracalibration/asymmetric_circles/";
             break;
     }
 
@@ -200,21 +226,17 @@ void CV_ChessboardDetectorTest::run_batch( const string& filename )
         {
             ts.printf( cvtest::TS::LOG, "one of chessboard images can't be read: %s\n", img_file.c_str() );
             ts.set_failed_test_info( cvtest::TS::FAIL_MISSING_TEST_DATA );
-            continue;
+            return;
         }
 
         string filename = folder + (string)board_list[idx * 2 + 1];
+        bool doesContatinChessboard;
         Mat expected;
         {
-            CvMat *u = (CvMat*)cvLoad( filename.c_str() );
-            if(!u )
-            {                
-                ts.printf( cvtest::TS::LOG, "one of chessboard corner files can't be read: %s\n", filename.c_str() ); 
-                ts.set_failed_test_info( cvtest::TS::FAIL_MISSING_TEST_DATA );
-                continue;                
-            }
-            expected = Mat(u, true);
-            cvReleaseMat( &u );
+            FileStorage fs(filename, FileStorage::READ);
+            fs["corners"] >> expected;
+            fs["isFound"] >> doesContatinChessboard;
+            fs.release();
         }                
         size_t count_exp = static_cast<size_t>(expected.cols * expected.rows);                
         Size pattern_size = expected.size();
@@ -229,51 +251,62 @@ void CV_ChessboardDetectorTest::run_batch( const string& filename )
             case CIRCLES_GRID:
                 result = findCirclesGrid(gray, pattern_size, v);
                 break;
+            case ASYMMETRIC_CIRCLES_GRID:
+                result = findCirclesGrid(gray, pattern_size, v, CALIB_CB_ASYMMETRIC_GRID | algorithmFlags);
+                break;
         }
         show_points( gray, Mat(), v, pattern_size, result );
-        if( !result || v.size() != count_exp )
+        
+        if( result ^ doesContatinChessboard || v.size() != count_exp )
         {
-            ts.printf( cvtest::TS::LOG, "chessboard is not found in %s\n", img_file.c_str() );
+            ts.printf( cvtest::TS::LOG, "chessboard is detected incorrectly in %s\n", img_file.c_str() );
             ts.set_failed_test_info( cvtest::TS::FAIL_INVALID_OUTPUT );
-            continue;
+            return;
         }
 
+        if( result )
+        {
+
 #ifndef WRITE_POINTS
-        double err = calcError(v, expected);
+            double err = calcError(v, expected);
 #if 0
-        if( err > rough_success_error_level )
-        {
-            ts.printf( cvtest::TS::LOG, "bad accuracy of corner guesses\n" );
-            ts.set_failed_test_info( cvtest::TS::FAIL_BAD_ACCURACY );
-            continue;
-        }
+            if( err > rough_success_error_level )
+            {
+                ts.printf( cvtest::TS::LOG, "bad accuracy of corner guesses\n" );
+                ts.set_failed_test_info( cvtest::TS::FAIL_BAD_ACCURACY );
+                continue;
+            }
 #endif
-        max_rough_error = MAX( max_rough_error, err );
+            max_rough_error = MAX( max_rough_error, err );
 #endif
-        if( pattern == CHESSBOARD )
-            cornerSubPix( gray, v, Size(5, 5), Size(-1,-1), TermCriteria(TermCriteria::EPS|TermCriteria::MAX_ITER, 30, 0.1));
-        //find4QuadCornerSubpix(gray, v, Size(5, 5));
-        show_points( gray, expected, v, pattern_size, result  );
-
+            if( pattern == CHESSBOARD )
+                cornerSubPix( gray, v, Size(5, 5), Size(-1,-1), TermCriteria(TermCriteria::EPS|TermCriteria::MAX_ITER, 30, 0.1));
+            //find4QuadCornerSubpix(gray, v, Size(5, 5));
+            show_points( gray, expected, v, pattern_size, result  );
 #ifndef WRITE_POINTS
-//        printf("called find4QuadCornerSubpix\n");
-        err = calcError(v, expected);
-        sum_error += err;
-        count++;
+    //        printf("called find4QuadCornerSubpix\n");
+            err = calcError(v, expected);
+            sum_error += err;
+            count++;
 #if 1
-        if( err > precise_success_error_level )
-        {
-            ts.printf( cvtest::TS::LOG, "Image %s: bad accuracy of adjusted corners %f\n", img_file.c_str(), err ); 
-            ts.set_failed_test_info( cvtest::TS::FAIL_BAD_ACCURACY );
-            continue;
-        }
+            if( err > precise_success_error_level )
+            {
+                ts.printf( cvtest::TS::LOG, "Image %s: bad accuracy of adjusted corners %f\n", img_file.c_str(), err ); 
+                ts.set_failed_test_info( cvtest::TS::FAIL_BAD_ACCURACY );
+                return;
+            }
 #endif
-        ts.printf(cvtest::TS::LOG, "Error on %s is %f\n", img_file.c_str(), err);
-        max_precise_error = MAX( max_precise_error, err );
-#else
+            ts.printf(cvtest::TS::LOG, "Error on %s is %f\n", img_file.c_str(), err);
+            max_precise_error = MAX( max_precise_error, err );
+#endif            
+        }
+
+#ifdef WRITE_POINTS
         Mat mat_v(pattern_size, CV_32FC2, (void*)&v[0]);
-        CvMat cvmat_v = mat_v;
-        cvSave( filename.c_str(), &cvmat_v );
+        FileStorage fs(filename, FileStorage::WRITE);
+        fs << "isFound" << result;
+        fs << "corners" << mat_v;
+        fs.release();
 #endif
         progress = update_progress( progress, idx, max_idx, 0 );
     }    
@@ -381,7 +414,7 @@ bool CV_ChessboardDetectorTest::checkByGenerator()
             ts->printf( cvtest::TS::LOG, "Chess board corners not found\n" );
             ts->set_failed_test_info( cvtest::TS::FAIL_BAD_ACCURACY );
             res = false;
-            continue;          
+            return res; 
         }
 
         double err = calcErrorMinError(cbg.cornersSize(), corners_found, corners_generated);            
@@ -390,7 +423,7 @@ bool CV_ChessboardDetectorTest::checkByGenerator()
             ts->printf( cvtest::TS::LOG, "bad accuracy of corner guesses" );
             ts->set_failed_test_info( cvtest::TS::FAIL_BAD_ACCURACY );
             res = false;
-            continue;
+            return res;
         }        
     }  
 
@@ -439,5 +472,7 @@ bool CV_ChessboardDetectorTest::checkByGenerator()
 
 TEST(Calib3d_ChessboardDetector, accuracy) {  CV_ChessboardDetectorTest test( CHESSBOARD ); test.safe_run(); }
 TEST(Calib3d_CirclesPatternDetector, accuracy) { CV_ChessboardDetectorTest test( CIRCLES_GRID ); test.safe_run(); }
+TEST(Calib3d_AsymmetricCirclesPatternDetector, accuracy) { CV_ChessboardDetectorTest test( ASYMMETRIC_CIRCLES_GRID ); test.safe_run(); }
+TEST(Calib3d_AsymmetricCirclesPatternDetectorWithClustering, accuracy) { CV_ChessboardDetectorTest test( ASYMMETRIC_CIRCLES_GRID, CALIB_CB_CLUSTERING ); test.safe_run(); }
 
 /* End of file. */

@@ -41,6 +41,8 @@
 //M*/
 
 #include "precomp.hpp"
+#include "opencv2/core/gpumat.hpp"
+#include "opencv2/core/opengl_interop.hpp"
 
 /****************************************************************************************\
 *                           [scaled] Identity matrix initialization                      *
@@ -199,10 +201,13 @@ void Mat::create(int d, const int* _sizes, int _type)
     if( d == 0 )
         return;
     flags = (_type & CV_MAT_TYPE_MASK) | MAGIC_VAL;
-    setSize(*this, d, _sizes, 0, allocator == 0);
+    setSize(*this, d, _sizes, 0, true);
     
     if( total() > 0 )
     {
+#ifdef HAVE_TGPU
+        if( !allocator || allocator == tegra::getAllocator() ) allocator = tegra::getAllocator(d, _sizes, _type);
+#endif
         if( !allocator )
         {
             size_t total = alignSize(step.p[0]*size.p[0], (int)sizeof(*refcount));
@@ -212,8 +217,23 @@ void Mat::create(int d, const int* _sizes, int _type)
         }
         else
         {
+#ifdef HAVE_TGPU
+           try 
+            {
+                allocator->allocate(dims, size, _type, refcount, datastart, data, step.p);
+                CV_Assert( step[dims-1] == (size_t)CV_ELEM_SIZE(flags) );
+            }catch(...)
+            {
+                allocator = 0;
+                size_t total = alignSize(step.p[0]*size.p[0], (int)sizeof(*refcount));
+                data = datastart = (uchar*)fastMalloc(total + (int)sizeof(*refcount));
+                refcount = (int*)(data + total);
+                *refcount = 1;
+            }
+#else
             allocator->allocate(dims, size, _type, refcount, datastart, data, step.p);
             CV_Assert( step[dims-1] == (size_t)CV_ELEM_SIZE(flags) );
+#endif
         }
     }
     
@@ -242,10 +262,9 @@ void Mat::deallocate()
 }
 
     
-Mat::Mat(const Mat& m, const Range& rowRange, const Range& colRange)
-    : flags(0), dims(0), rows(0), cols(0), data(0), refcount(0),
-    datastart(0), dataend(0), datalimit(0), allocator(0), size(&rows)
+Mat::Mat(const Mat& m, const Range& rowRange, const Range& colRange) : size(&rows)
 {
+    initEmpty();
     CV_Assert( m.dims >= 2 );
     if( m.dims > 2 )
     {
@@ -316,21 +335,19 @@ Mat::Mat(const Mat& m, const Rect& roi)
 }
 
     
-Mat::Mat(int _dims, const int* _sizes, int _type, void* _data, const size_t* _steps)
-    : flags(MAGIC_VAL|CV_MAT_TYPE(_type)), dims(0),
-    rows(0), cols(0), data((uchar*)_data), refcount(0),
-    datastart((uchar*)_data), dataend((uchar*)_data), datalimit((uchar*)_data),
-    allocator(0), size(&rows)
+Mat::Mat(int _dims, const int* _sizes, int _type, void* _data, const size_t* _steps) : size(&rows)
 {
+    initEmpty();
+    flags |= CV_MAT_TYPE(_type);
+    data = datastart = (uchar*)_data;
     setSize(*this, _dims, _sizes, _steps, true);
     finalizeHdr(*this);
 }
     
     
-Mat::Mat(const Mat& m, const Range* ranges)
-    : flags(m.flags), dims(0), rows(0), cols(0), data(0), refcount(0),
-    datastart(0), dataend(0), datalimit(0), allocator(0), size(&rows)
+Mat::Mat(const Mat& m, const Range* ranges) : size(&rows)
 {
+    initEmpty();
     int i, d = m.dims;
     
     CV_Assert(ranges);
@@ -354,12 +371,13 @@ Mat::Mat(const Mat& m, const Range* ranges)
 }
  
     
-Mat::Mat(const CvMatND* m, bool copyData)
-    : flags(MAGIC_VAL|CV_MAT_TYPE(m->type)), dims(0), rows(0), cols(0),
-    data((uchar*)m->data.ptr), refcount(0),
-    datastart((uchar*)m->data.ptr), allocator(0),
-    size(&rows)
+Mat::Mat(const CvMatND* m, bool copyData) : size(&rows)
 {
+    initEmpty();
+    if( !m )
+        return;
+    data = datastart = m->data.ptr;
+    flags |= CV_MAT_TYPE(m->type);
     int _sizes[CV_MAX_DIM];
     size_t _steps[CV_MAX_DIM];
     
@@ -414,12 +432,45 @@ Mat Mat::diag(int d) const
     
     return m;
 }
+
     
-    
-Mat::Mat(const IplImage* img, bool copyData)
-    : flags(MAGIC_VAL), dims(2), rows(0), cols(0),
-    data(0), refcount(0), datastart(0), dataend(0), allocator(0), size(&rows)
+Mat::Mat(const CvMat* m, bool copyData) : size(&rows)
 {
+    initEmpty();
+    
+    if( !m )
+        return;
+    
+    if( !copyData )
+    {
+        flags = MAGIC_VAL + (m->type & (CV_MAT_TYPE_MASK|CV_MAT_CONT_FLAG));
+        dims = 2;
+        rows = m->rows;
+        cols = m->cols;
+        data = datastart = m->data.ptr;
+        size_t esz = CV_ELEM_SIZE(m->type), minstep = cols*esz, _step = m->step;
+        if( _step == 0 )
+            _step = minstep;
+        datalimit = datastart + _step*rows;
+        dataend = datalimit - _step + minstep;
+        step[0] = _step; step[1] = esz;
+    }
+    else
+    {
+        data = datastart = dataend = 0;
+        Mat(m->rows, m->cols, m->type, m->data.ptr, m->step).copyTo(*this);
+    }
+}
+
+    
+Mat::Mat(const IplImage* img, bool copyData) : size(&rows)
+{
+    initEmpty();
+    
+    if( !img )
+        return;
+    
+    dims = 2;
     CV_DbgAssert(CV_IS_IMAGE(img) && img->imageData != 0);
     
     int depth = IPL2CV_DEPTH(img->depth);
@@ -868,8 +919,11 @@ void scalarToRawData(const Scalar& s, void* _buf, int type, int unroll_to)
 _InputArray::_InputArray() : flags(0), obj(0) {}
 _InputArray::_InputArray(const Mat& m) : flags(MAT), obj((void*)&m) {}
 _InputArray::_InputArray(const vector<Mat>& vec) : flags(STD_VECTOR_MAT), obj((void*)&vec) {}
-_InputArray::_InputArray(const double& val) : flags(MATX+CV_64F), obj((void*)&val), sz(Size(1,1)) {}
-_InputArray::_InputArray(const MatExpr& expr) : flags(EXPR), obj((void*)&expr) {}
+_InputArray::_InputArray(const double& val) : flags(FIXED_TYPE + FIXED_SIZE + MATX + CV_64F), obj((void*)&val), sz(Size(1,1)) {}
+_InputArray::_InputArray(const MatExpr& expr) : flags(FIXED_TYPE + FIXED_SIZE + EXPR), obj((void*)&expr) {}
+_InputArray::_InputArray(const GlBuffer& buf) : flags(FIXED_TYPE + FIXED_SIZE + OPENGL_BUFFER), obj((void*)&buf) {}
+_InputArray::_InputArray(const GlTexture& tex) : flags(FIXED_TYPE + FIXED_SIZE + OPENGL_TEXTURE), obj((void*)&tex) {}
+_InputArray::_InputArray(const gpu::GpuMat& d_mat) : flags(GPU_MAT), obj((void*)&d_mat) {}
  
 Mat _InputArray::getMat(int i) const
 {
@@ -877,8 +931,10 @@ Mat _InputArray::getMat(int i) const
     
     if( k == MAT )
     {
-        CV_Assert( i < 0 );
-        return *(const Mat*)obj;
+        const Mat* m = (const Mat*)obj;
+        if( i < 0 )
+            return *m;
+        return m->row(i);
     }
     
     if( k == EXPR )
@@ -1006,10 +1062,46 @@ void _InputArray::getMatVector(vector<Mat>& mv) const
         return;
     }
 }
+
+GlBuffer _InputArray::getGlBuffer() const
+{
+    int k = kind();
+
+    CV_Assert(k == OPENGL_BUFFER);
+    //if( k == OPENGL_BUFFER )
+    {
+        const GlBuffer* buf = (const GlBuffer*)obj;
+        return *buf;
+    }
+}
+
+GlTexture _InputArray::getGlTexture() const
+{
+    int k = kind();
+
+    CV_Assert(k == OPENGL_TEXTURE);
+    //if( k == OPENGL_TEXTURE )
+    {
+        const GlTexture* tex = (const GlTexture*)obj;
+        return *tex;
+    }
+}
+
+gpu::GpuMat _InputArray::getGpuMat() const
+{
+    int k = kind();
+
+    CV_Assert(k == GPU_MAT);
+    //if( k == GPU_MAT )
+    {
+        const gpu::GpuMat* d_mat = (const gpu::GpuMat*)obj;
+        return *d_mat;
+    }
+}
     
 int _InputArray::kind() const
 {
-    return flags & -(1 << KIND_SHIFT);
+    return flags & KIND_MASK;
 }
     
 Size _InputArray::size(int i) const
@@ -1058,8 +1150,7 @@ Size _InputArray::size(int i) const
         return szb == szi ? Size((int)szb, 1) : Size((int)(szb/CV_ELEM_SIZE(flags)), 1);
     }
     
-    CV_Assert( k == STD_VECTOR_MAT );
-    //if( k == STD_VECTOR_MAT )
+    if( k == STD_VECTOR_MAT )
     {
         const vector<Mat>& vv = *(const vector<Mat>*)obj;
         if( i < 0 )
@@ -1067,6 +1158,28 @@ Size _InputArray::size(int i) const
         CV_Assert( i < (int)vv.size() );
         
         return vv[i].size();
+    }
+
+    if( k == OPENGL_BUFFER )
+    {
+        CV_Assert( i < 0 );
+        const GlBuffer* buf = (const GlBuffer*)obj;
+        return buf->size();
+    }
+
+    if( k == OPENGL_TEXTURE )
+    {
+        CV_Assert( i < 0 );
+        const GlTexture* tex = (const GlTexture*)obj;
+        return tex->size();
+    }
+
+    CV_Assert( k == GPU_MAT );
+    //if( k == GPU_MAT )
+    {
+        CV_Assert( i < 0 );
+        const gpu::GpuMat* d_mat = (const gpu::GpuMat*)obj;
+        return d_mat->size();
     }
 }
 
@@ -1091,14 +1204,23 @@ int _InputArray::type(int i) const
     if( k == NONE )
         return -1;
     
-    CV_Assert( k == STD_VECTOR_MAT );
-    //if( k == STD_VECTOR_MAT )
+    if( k == STD_VECTOR_MAT )
     {
         const vector<Mat>& vv = *(const vector<Mat>*)obj;
         CV_Assert( i < (int)vv.size() );
         
         return vv[i >= 0 ? i : 0].type();
     }
+    
+    if( k == OPENGL_BUFFER )
+        return ((const GlBuffer*)obj)->type();
+    
+    if( k == OPENGL_TEXTURE )
+        return ((const GlTexture*)obj)->type();
+    
+    CV_Assert( k == GPU_MAT );
+    //if( k == GPU_MAT )
+        return ((const gpu::GpuMat*)obj)->type();
 }
     
 int _InputArray::depth(int i) const
@@ -1139,29 +1261,40 @@ bool _InputArray::empty() const
         return vv.empty();
     }
     
-    CV_Assert( k == STD_VECTOR_MAT );
-    //if( k == STD_VECTOR_MAT )
+    if( k == STD_VECTOR_MAT )
     {
         const vector<Mat>& vv = *(const vector<Mat>*)obj;
         return vv.empty();
     }
+    
+    if( k == OPENGL_BUFFER )
+        return ((const GlBuffer*)obj)->empty();
+    
+    if( k == OPENGL_TEXTURE )
+        return ((const GlTexture*)obj)->empty();
+    
+    CV_Assert( k == GPU_MAT );
+    //if( k == GPU_MAT )
+        return ((const gpu::GpuMat*)obj)->empty();
 }
     
     
 _OutputArray::_OutputArray() {}
 _OutputArray::_OutputArray(Mat& m) : _InputArray(m) {}
 _OutputArray::_OutputArray(vector<Mat>& vec) : _InputArray(vec) {}
+
+_OutputArray::_OutputArray(const Mat& m) : _InputArray(m) {flags |= FIXED_SIZE|FIXED_TYPE;}
+_OutputArray::_OutputArray(const vector<Mat>& vec) : _InputArray(vec) {flags |= FIXED_SIZE;}
+
     
 bool _OutputArray::fixedSize() const
 {
-    int k = kind();
-    return k == MATX;
+    return (flags & FIXED_SIZE) == FIXED_SIZE;
 }
 
 bool _OutputArray::fixedType() const
 {
-    int k = kind();
-    return k != MAT && k != STD_VECTOR_MAT;
+    return (flags & FIXED_TYPE) == FIXED_TYPE;
 }
     
 void _OutputArray::create(Size _sz, int type, int i, bool allowTransposed, int fixedDepthMask) const
@@ -1169,6 +1302,8 @@ void _OutputArray::create(Size _sz, int type, int i, bool allowTransposed, int f
     int k = kind();
     if( k == MAT && i < 0 && !allowTransposed && fixedDepthMask == 0 )
     {
+        CV_Assert(!fixedSize() || ((Mat*)obj)->size.operator()() == _sz);
+        CV_Assert(!fixedType() || ((Mat*)obj)->type() == type);
         ((Mat*)obj)->create(_sz, type);
         return;
     }
@@ -1181,6 +1316,8 @@ void _OutputArray::create(int rows, int cols, int type, int i, bool allowTranspo
     int k = kind();
     if( k == MAT && i < 0 && !allowTransposed && fixedDepthMask == 0 )
     {
+        CV_Assert(!fixedSize() || ((Mat*)obj)->size.operator()() == Size(cols, rows));
+        CV_Assert(!fixedType() || ((Mat*)obj)->type() == type);
         ((Mat*)obj)->create(rows, cols, type);
         return;
     }
@@ -1188,7 +1325,7 @@ void _OutputArray::create(int rows, int cols, int type, int i, bool allowTranspo
     create(2, sz, type, i, allowTransposed, fixedDepthMask);
 }
     
-void _OutputArray::create(int dims, const int* size, int type, int i, bool allocateVector, int fixedDepthMask) const
+void _OutputArray::create(int dims, const int* size, int type, int i, bool allowTransposed, int fixedDepthMask) const
 {
     int k = kind();
     type = CV_MAT_TYPE(type);
@@ -1197,14 +1334,31 @@ void _OutputArray::create(int dims, const int* size, int type, int i, bool alloc
     {
         CV_Assert( i < 0 );
         Mat& m = *(Mat*)obj;
-        if( allocateVector )
+        if( allowTransposed )
         {
             if( !m.isContinuous() )
+            {
+                CV_Assert(!fixedType() && !fixedSize());
                 m.release();
+            }
             
             if( dims == 2 && m.dims == 2 && m.data &&
                 m.type() == type && m.rows == size[1] && m.cols == size[0] )
                 return;
+        }
+
+        if(fixedType())
+        {
+            if(CV_MAT_CN(type) == m.channels() && ((1 << CV_MAT_TYPE(flags)) & fixedDepthMask) != 0 )
+                type = m.type();
+            else
+                CV_Assert(CV_MAT_TYPE(type) == m.type());
+        }
+        if(fixedSize())
+        {
+            CV_Assert(m.dims == dims);
+            for(int j = 0; j < dims; ++j)
+                CV_Assert(m.size[j] == size[j]);
         }
         m.create(dims, size, type);
         return;
@@ -1216,7 +1370,7 @@ void _OutputArray::create(int dims, const int* size, int type, int i, bool alloc
         int type0 = CV_MAT_TYPE(flags);
         CV_Assert( type == type0 || (CV_MAT_CN(type) == 1 && ((1 << type0) & fixedDepthMask) != 0) );
         CV_Assert( dims == 2 && ((size[0] == sz.height && size[1] == sz.width) ||
-                                 (allocateVector && size[0] == sz.width && size[1] == sz.height)));
+                                 (allowTransposed && size[0] == sz.width && size[1] == sz.height)));
         return;
     }
     
@@ -1231,6 +1385,7 @@ void _OutputArray::create(int dims, const int* size, int type, int i, bool alloc
             vector<vector<uchar> >& vv = *(vector<vector<uchar> >*)obj;
             if( i < 0 )
             {
+                CV_Assert(!fixedSize() || len == vv.size());
                 vv.resize(len);
                 return;
             }
@@ -1244,6 +1399,7 @@ void _OutputArray::create(int dims, const int* size, int type, int i, bool alloc
         CV_Assert( type == type0 || (CV_MAT_CN(type) == CV_MAT_CN(type0) && ((1 << type0) & fixedDepthMask) != 0) );
         
         int esz = CV_ELEM_SIZE(type0);
+        CV_Assert(!fixedSize() || len == ((vector<uchar>*)v)->size() / esz);
         switch( esz )
         {
         case 1:
@@ -1314,30 +1470,62 @@ void _OutputArray::create(int dims, const int* size, int type, int i, bool alloc
         if( i < 0 )
         {
             CV_Assert( dims == 2 && (size[0] == 1 || size[1] == 1 || size[0]*size[1] == 0) );
-            size_t len = size[0]*size[1] > 0 ? size[0] + size[1] - 1 : 0;
+            size_t len = size[0]*size[1] > 0 ? size[0] + size[1] - 1 : 0, len0 = v.size();
             
+            CV_Assert(!fixedSize() || len == len0);
             v.resize(len);
+            if( fixedType() )
+            {
+                int type = CV_MAT_TYPE(flags);
+                for( size_t j = len0; j < len; j++ )
+                {
+                    if( v[i].type() == type )
+                        continue;
+                    CV_Assert( v[i].empty() );
+                    v[i].flags = (v[i].flags & ~CV_MAT_TYPE_MASK) | type;
+                }
+            }
             return;
         }
         
         CV_Assert( i < (int)v.size() );
         Mat& m = v[i];
         
-        if( allocateVector )
+        if( allowTransposed )
         {
             if( !m.isContinuous() )
+            {
+                CV_Assert(!fixedType() && !fixedSize());
                 m.release();
+            }
             
             if( dims == 2 && m.dims == 2 && m.data &&
                 m.type() == type && m.rows == size[1] && m.cols == size[0] )
                 return;
         }
+
+        if(fixedType())
+        {
+            if(CV_MAT_CN(type) == m.channels() && ((1 << CV_MAT_TYPE(flags)) & fixedDepthMask) != 0 )
+                type = m.type();
+            else
+                CV_Assert(!fixedType() || (CV_MAT_CN(type) == m.channels() && ((1 << CV_MAT_TYPE(flags)) & fixedDepthMask) != 0));
+        }
+        if(fixedSize())
+        {
+            CV_Assert(m.dims == dims);
+            for(int j = 0; j < dims; ++j)
+                CV_Assert(m.size[j] == size[j]);
+        }
+
         m.create(dims, size, type);
     }
 }
     
 void _OutputArray::release() const
 {
+    CV_Assert(!fixedSize());
+
     int k = kind();
     
     if( k == MAT )
@@ -1374,6 +1562,7 @@ void _OutputArray::clear() const
     
     if( k == MAT )
     {
+        CV_Assert(!fixedSize());
         ((Mat*)obj)->resize(0);
         return;
     }
@@ -1572,9 +1761,10 @@ namespace cv
 template<typename T> static void
 transpose_( const uchar* src, size_t sstep, uchar* dst, size_t dstep, Size sz )
 {
-    int i, j, m = sz.width, n = sz.height;
-    
-    for( i = 0; i <= m - 4; i += 4 )
+    int i=0, j, m = sz.width, n = sz.height;
+
+	#if CV_ENABLE_UNROLLED
+    for(; i <= m - 4; i += 4 )
     {
         T* d0 = (T*)(dst + dstep*i);
         T* d1 = (T*)(dst + dstep*(i+1));
@@ -1600,12 +1790,13 @@ transpose_( const uchar* src, size_t sstep, uchar* dst, size_t dstep, Size sz )
             d0[j] = s0[0]; d1[j] = s0[1]; d2[j] = s0[2]; d3[j] = s0[3];
         }
     }
-    
+    #endif
     for( ; i < m; i++ )
     {
         T* d0 = (T*)(dst + dstep*i);
-        
-        for( j = 0; j <= n - 4; j += 4 )
+        j = 0;
+		#if CV_ENABLE_UNROLLED
+        for(; j <= n - 4; j += 4 )
         {
             const T* s0 = (const T*)(src + i*sizeof(T) + sstep*j);
             const T* s1 = (const T*)(src + i*sizeof(T) + sstep*(j+1));
@@ -1614,7 +1805,7 @@ transpose_( const uchar* src, size_t sstep, uchar* dst, size_t dstep, Size sz )
             
             d0[j] = s0[0]; d0[j+1] = s1[0]; d0[j+2] = s2[0]; d0[j+3] = s3[0];
         }
-        
+        #endif
         for( ; j < n; j++ )
         {
             const T* s0 = (const T*)(src + i*sizeof(T) + j*sstep);
@@ -1793,7 +1984,9 @@ reduceR_( const Mat& srcmat, Mat& dstmat )
     for( ; --size.height; )
     {
         src += srcstep;
-        for( i = 0; i <= size.width - 4; i += 4 )
+        i = 0;
+		#if CV_ENABLE_UNROLLED
+        for(; i <= size.width - 4; i += 4 )
         {
             WT s0, s1;
             s0 = op(buf[i], (WT)src[i]);
@@ -1804,7 +1997,7 @@ reduceR_( const Mat& srcmat, Mat& dstmat )
             s1 = op(buf[i+3], (WT)src[i+3]);
             buf[i+2] = s0; buf[i+3] = s1;
         }
-
+        #endif
         for( ; i < size.width; i++ )
             buf[i] = op(buf[i], (WT)src[i]);
     }
@@ -1845,19 +2038,65 @@ reduceC_( const Mat& srcmat, Mat& dstmat )
 
                 for( ; i < size.width; i += cn )
                 {
-                    a0 = op(a0, (WT)src[i]);
+                    a0 = op(a0, (WT)src[i+k]);
                 }
                 a0 = op(a0, a1);
-                dst[k] = (ST)a0;
+              dst[k] = (ST)a0;
             }
         }
-    }
+	}
 }
 
 typedef void (*ReduceFunc)( const Mat& src, Mat& dst );
 
 }
-    
+
+#define reduceSumR8u32s  reduceR_<uchar, int,   OpAdd<int> >
+#define reduceSumR8u32f  reduceR_<uchar, float, OpAdd<int> >
+#define reduceSumR8u64f  reduceR_<uchar, double,OpAdd<int> >
+#define reduceSumR16u32f reduceR_<ushort,float, OpAdd<float> >
+#define reduceSumR16u64f reduceR_<ushort,double,OpAdd<double> >
+#define reduceSumR16s32f reduceR_<short, float, OpAdd<float> >
+#define reduceSumR16s64f reduceR_<short, double,OpAdd<double> >
+#define reduceSumR32f32f reduceR_<float, float, OpAdd<float> >
+#define reduceSumR32f64f reduceR_<float, double,OpAdd<double> >
+#define reduceSumR64f64f reduceR_<double,double,OpAdd<double> >
+
+#define reduceMaxR8u  reduceR_<uchar, uchar, OpMax<uchar> >
+#define reduceMaxR16u reduceR_<ushort,ushort,OpMax<ushort> >
+#define reduceMaxR16s reduceR_<short, short, OpMax<short> >
+#define reduceMaxR32f reduceR_<float, float, OpMax<float> >
+#define reduceMaxR64f reduceR_<double,double,OpMax<double> >
+
+#define reduceMinR8u  reduceR_<uchar, uchar, OpMin<uchar> >
+#define reduceMinR16u reduceR_<ushort,ushort,OpMin<ushort> >
+#define reduceMinR16s reduceR_<short, short, OpMin<short> >
+#define reduceMinR32f reduceR_<float, float, OpMin<float> >
+#define reduceMinR64f reduceR_<double,double,OpMin<double> >
+
+#define reduceSumC8u32s  reduceC_<uchar, int,   OpAdd<int> >
+#define reduceSumC8u32f  reduceC_<uchar, float, OpAdd<int> >
+#define reduceSumC8u64f  reduceC_<uchar, double,OpAdd<int> >
+#define reduceSumC16u32f reduceC_<ushort,float, OpAdd<float> >
+#define reduceSumC16u64f reduceC_<ushort,double,OpAdd<double> >
+#define reduceSumC16s32f reduceC_<short, float, OpAdd<float> >
+#define reduceSumC16s64f reduceC_<short, double,OpAdd<double> >
+#define reduceSumC32f32f reduceC_<float, float, OpAdd<float> >
+#define reduceSumC32f64f reduceC_<float, double,OpAdd<double> >
+#define reduceSumC64f64f reduceC_<double,double,OpAdd<double> >
+
+#define reduceMaxC8u  reduceC_<uchar, uchar, OpMax<uchar> >
+#define reduceMaxC16u reduceC_<ushort,ushort,OpMax<ushort> >
+#define reduceMaxC16s reduceC_<short, short, OpMax<short> >
+#define reduceMaxC32f reduceC_<float, float, OpMax<float> >
+#define reduceMaxC64f reduceC_<double,double,OpMax<double> >
+
+#define reduceMinC8u  reduceC_<uchar, uchar, OpMin<uchar> >
+#define reduceMinC16u reduceC_<ushort,ushort,OpMin<ushort> >
+#define reduceMinC16s reduceC_<short, short, OpMin<short> >
+#define reduceMinC32f reduceC_<float, float, OpMin<float> >
+#define reduceMinC64f reduceC_<double,double,OpMin<double> >
+
 void cv::reduce(InputArray _src, OutputArray _dst, int dim, int op, int dtype)
 {
     Mat src = _src.getMat();
@@ -1873,7 +2112,7 @@ void cv::reduce(InputArray _src, OutputArray _dst, int dim, int op, int dtype)
     Mat dst = _dst.getMat(), temp = dst;
     
     CV_Assert( op == CV_REDUCE_SUM || op == CV_REDUCE_MAX ||
-        op == CV_REDUCE_MIN || op == CV_REDUCE_AVG );
+               op == CV_REDUCE_MIN || op == CV_REDUCE_AVG );
     CV_Assert( src.channels() == dst.channels() );
 
     if( op == CV_REDUCE_AVG )
@@ -1892,51 +2131,51 @@ void cv::reduce(InputArray _src, OutputArray _dst, int dim, int op, int dtype)
         if( op == CV_REDUCE_SUM )
         {
             if(sdepth == CV_8U && ddepth == CV_32S)
-                func = reduceR_<uchar,int,OpAdd<int> >;
+                func = GET_OPTIMIZED(reduceSumR8u32s);
             else if(sdepth == CV_8U && ddepth == CV_32F)
-                func = reduceR_<uchar,float,OpAdd<int> >;
+                func = reduceSumR8u32f;
             else if(sdepth == CV_8U && ddepth == CV_64F)
-                func = reduceR_<uchar,double,OpAdd<int> >;
+                func = reduceSumR8u64f;
             else if(sdepth == CV_16U && ddepth == CV_32F)
-                func = reduceR_<ushort,float,OpAdd<float> >;
+                func = reduceSumR16u32f;
             else if(sdepth == CV_16U && ddepth == CV_64F)
-                func = reduceR_<ushort,double,OpAdd<double> >;
+                func = reduceSumR16u64f;
             else if(sdepth == CV_16S && ddepth == CV_32F)
-                func = reduceR_<short,float,OpAdd<float> >;
+                func = reduceSumR16s32f;
             else if(sdepth == CV_16S && ddepth == CV_64F)
-                func = reduceR_<short,double,OpAdd<double> >;
+                func = reduceSumR16s64f;
             else if(sdepth == CV_32F && ddepth == CV_32F)
-                func = reduceR_<float,float,OpAdd<float> >;
+                func = GET_OPTIMIZED(reduceSumR32f32f);
             else if(sdepth == CV_32F && ddepth == CV_64F)
-                func = reduceR_<float,double,OpAdd<double> >;
+                func = reduceSumR32f64f;
             else if(sdepth == CV_64F && ddepth == CV_64F)
-                func = reduceR_<double,double,OpAdd<double> >;
+                func = reduceSumR64f64f;
         }
         else if(op == CV_REDUCE_MAX)
         {
             if(sdepth == CV_8U && ddepth == CV_8U)
-                func = reduceR_<uchar, uchar, OpMax<uchar> >;
+                func = GET_OPTIMIZED(reduceMaxR8u);
             else if(sdepth == CV_16U && ddepth == CV_16U)
-                func = reduceR_<ushort, ushort, OpMax<ushort> >;
+                func = reduceMaxR16u;
             else if(sdepth == CV_16S && ddepth == CV_16S)
-                func = reduceR_<short, short, OpMax<short> >;
+                func = reduceMaxR16s;
             else if(sdepth == CV_32F && ddepth == CV_32F)
-                func = reduceR_<float, float, OpMax<float> >;
+                func = GET_OPTIMIZED(reduceMaxR32f);
             else if(sdepth == CV_64F && ddepth == CV_64F)
-                func = reduceR_<double, double, OpMax<double> >;
+                func = reduceMaxR64f;
         }
         else if(op == CV_REDUCE_MIN)
         {
             if(sdepth == CV_8U && ddepth == CV_8U)
-                func = reduceR_<uchar, uchar, OpMin<uchar> >;
+                func = GET_OPTIMIZED(reduceMinR8u);
             else if(sdepth == CV_16U && ddepth == CV_16U)
-                func = reduceR_<ushort, ushort, OpMin<ushort> >;
+                func = reduceMinR16u;
             else if(sdepth == CV_16S && ddepth == CV_16S)
-                func = reduceR_<short, short, OpMin<short> >;
+                func = reduceMinR16s;
             else if(sdepth == CV_32F && ddepth == CV_32F)
-                func = reduceR_<float, float, OpMin<float> >;
+                func = GET_OPTIMIZED(reduceMinR32f);
             else if(sdepth == CV_64F && ddepth == CV_64F)
-                func = reduceR_<double, double, OpMin<double> >;
+                func = reduceMinR64f;
         }
     }
     else
@@ -1944,64 +2183,64 @@ void cv::reduce(InputArray _src, OutputArray _dst, int dim, int op, int dtype)
         if(op == CV_REDUCE_SUM)
         {
             if(sdepth == CV_8U && ddepth == CV_32S)
-                func = reduceC_<uchar,int,OpAdd<int> >;
+                func = GET_OPTIMIZED(reduceSumC8u32s);
             else if(sdepth == CV_8U && ddepth == CV_32F)
-                func = reduceC_<uchar,float,OpAdd<int> >;
+                func = reduceSumC8u32f;
             else if(sdepth == CV_8U && ddepth == CV_64F)
-                func = reduceC_<uchar,double,OpAdd<int> >;
+                func = reduceSumC8u64f;
             else if(sdepth == CV_16U && ddepth == CV_32F)
-                func = reduceC_<ushort,float,OpAdd<float> >;
+                func = reduceSumC16u32f;
             else if(sdepth == CV_16U && ddepth == CV_64F)
-                func = reduceC_<ushort,double,OpAdd<double> >;
+                func = reduceSumC16u64f;
             else if(sdepth == CV_16S && ddepth == CV_32F)
-                func = reduceC_<short,float,OpAdd<float> >;
+                func = reduceSumC16s32f;
             else if(sdepth == CV_16S && ddepth == CV_64F)
-                func = reduceC_<short,double,OpAdd<double> >;
+                func = reduceSumC16s64f;
             else if(sdepth == CV_32F && ddepth == CV_32F)
-                func = reduceC_<float,float,OpAdd<float> >;
+                func = GET_OPTIMIZED(reduceSumC32f32f);
             else if(sdepth == CV_32F && ddepth == CV_64F)
-                func = reduceC_<float,double,OpAdd<double> >;
+                func = reduceSumC32f64f;
             else if(sdepth == CV_64F && ddepth == CV_64F)
-                func = reduceC_<double,double,OpAdd<double> >;
+                func = reduceSumC64f64f;
         }
         else if(op == CV_REDUCE_MAX)
         {
             if(sdepth == CV_8U && ddepth == CV_8U)
-                func = reduceC_<uchar, uchar, OpMax<uchar> >;
+                func = GET_OPTIMIZED(reduceMaxC8u);
             else if(sdepth == CV_16U && ddepth == CV_16U)
-                func = reduceC_<ushort, ushort, OpMax<ushort> >;
+                func = reduceMaxC16u;
             else if(sdepth == CV_16S && ddepth == CV_16S)
-                func = reduceC_<short, short, OpMax<short> >;
+                func = reduceMaxC16s;
             else if(sdepth == CV_32F && ddepth == CV_32F)
-                func = reduceC_<float, float, OpMax<float> >;
+                func = GET_OPTIMIZED(reduceMaxC32f);
             else if(sdepth == CV_64F && ddepth == CV_64F)
-                func = reduceC_<double, double, OpMax<double> >;
+                func = reduceMaxC64f;
         }
         else if(op == CV_REDUCE_MIN)
         {
             if(sdepth == CV_8U && ddepth == CV_8U)
-                func = reduceC_<uchar, uchar, OpMin<uchar> >;
+                func = GET_OPTIMIZED(reduceMinC8u);
             else if(sdepth == CV_16U && ddepth == CV_16U)
-                func = reduceC_<ushort, ushort, OpMin<ushort> >;
+                func = reduceMinC16u;
             else if(sdepth == CV_16S && ddepth == CV_16S)
-                func = reduceC_<short, short, OpMin<short> >;
+                func = reduceMinC16s;
             else if(sdepth == CV_32F && ddepth == CV_32F)
-                func = reduceC_<float, float, OpMin<float> >;
+                func = GET_OPTIMIZED(reduceMinC32f);
             else if(sdepth == CV_64F && ddepth == CV_64F)
-                func = reduceC_<double, double, OpMin<double> >;
+                func = reduceMinC64f;
         }
     }
 
     if( !func )
         CV_Error( CV_StsUnsupportedFormat,
-        "Unsupported combination of input and output array formats" );
+                  "Unsupported combination of input and output array formats" );
 
     func( src, temp );
 
     if( op0 == CV_REDUCE_AVG )
         temp.convertTo(dst, dst.type(), 1./(dim == 0 ? src.rows : src.cols));
 }
-
+	
     
 //////////////////////////////////////// sort ///////////////////////////////////////////
 
@@ -2159,43 +2398,6 @@ static void generateRandomCenter(const vector<Vec2f>& box, float* center, RNG& r
 }
 
 
-static inline float distance(const float* a, const float* b, int n)
-{
-    int j = 0; float d = 0.f;
-#if CV_SSE
-    if( USE_SSE2 )
-    {
-        float CV_DECL_ALIGNED(16) buf[4];
-        __m128 d0 = _mm_setzero_ps(), d1 = _mm_setzero_ps();
-
-        for( ; j <= n - 8; j += 8 )
-        {
-            __m128 t0 = _mm_sub_ps(_mm_loadu_ps(a + j), _mm_loadu_ps(b + j));
-            __m128 t1 = _mm_sub_ps(_mm_loadu_ps(a + j + 4), _mm_loadu_ps(b + j + 4));
-            d0 = _mm_add_ps(d0, _mm_mul_ps(t0, t0));
-            d1 = _mm_add_ps(d1, _mm_mul_ps(t1, t1));
-        }
-        _mm_store_ps(buf, _mm_add_ps(d0, d1));
-        d = buf[0] + buf[1] + buf[2] + buf[3];
-    }
-    else
-#endif
-    {
-        for( ; j <= n - 4; j += 4 )
-        {
-            float t0 = a[j] - b[j], t1 = a[j+1] - b[j+1], t2 = a[j+2] - b[j+2], t3 = a[j+3] - b[j+3];
-            d += t0*t0 + t1*t1 + t2*t2 + t3*t3;
-        }
-    }
-
-    for( ; j < n; j++ )
-    {
-        float t = a[j] - b[j];
-        d += t*t;
-    }
-    return d;
-}
-
 /*
 k-means center initialization using the following algorithm:
 Arthur & Vassilvitskii (2007) k-means++: The Advantages of Careful Seeding
@@ -2216,7 +2418,7 @@ static void generateCentersPP(const Mat& _data, Mat& _out_centers,
 
     for( i = 0; i < N; i++ )
     {
-        dist[i] = distance(data + step*i, data + step*centers[0], dims);
+        dist[i] = normL2Sqr_(data + step*i, data + step*centers[0], dims);
         sum0 += dist[i];
     }
     
@@ -2234,7 +2436,7 @@ static void generateCentersPP(const Mat& _data, Mat& _out_centers,
             int ci = i;
             for( i = 0; i < N; i++ )
             {
-                tdist2[i] = std::min(distance(data + step*i, data + step*ci, dims), dist[i]);
+                tdist2[i] = std::min(normL2Sqr_(data + step*i, data + step*ci, dims), dist[i]);
                 s += tdist2[i];
             }
             
@@ -2268,12 +2470,14 @@ double cv::kmeans( InputArray _data, int K,
 {
     const int SPP_TRIALS = 3;
     Mat data = _data.getMat();
-    int N = data.rows > 1 ? data.rows : data.cols;
-    int dims = (data.rows > 1 ? data.cols : 1)*data.channels();
+    bool isrow = data.rows == 1 && data.channels() > 1;
+    int N = !isrow ? data.rows : data.cols;
+    int dims = (!isrow ? data.cols : 1)*data.channels();
     int type = data.depth();
 
     attempts = std::max(attempts, 1);
     CV_Assert( data.dims <= 2 && type == CV_32F && K > 0 );
+    CV_Assert( N >= K );
 
     _bestLabels.create(N, 1, CV_32S, -1, true);
     
@@ -2297,7 +2501,7 @@ double cv::kmeans( InputArray _data, int K,
     }
     int* labels = _labels.ptr<int>();
 
-    Mat centers(K, dims, type), old_centers(K, dims, type);
+    Mat centers(K, dims, type), old_centers(K, dims, type), temp(1, dims, type);
     vector<int> counters(K);
     vector<Vec2f> _box(dims);
     Vec2f* box = &_box[0];
@@ -2341,7 +2545,7 @@ double cv::kmeans( InputArray _data, int K,
     for( a = 0; a < attempts; a++ )
     {
         double max_center_shift = DBL_MAX;
-        for( iter = 0; iter < criteria.maxCount && max_center_shift > criteria.epsilon; iter++ )
+        for( iter = 0;; )
         {
             swap(centers, old_centers);
 
@@ -2373,7 +2577,9 @@ double cv::kmeans( InputArray _data, int K,
                     sample = data.ptr<float>(i);
                     k = labels[i];
                     float* center = centers.ptr<float>(k);
-                    for( j = 0; j <= dims - 4; j += 4 )
+					j=0;
+					#if CV_ENABLE_UNROLLED
+                    for(; j <= dims - 4; j += 4 )
                     {
                         float t0 = center[j] + sample[j];
                         float t1 = center[j+1] + sample[j+1];
@@ -2387,6 +2593,7 @@ double cv::kmeans( InputArray _data, int K,
                         center[j+2] = t0;
                         center[j+3] = t1;
                     }
+                    #endif
                     for( ; j < dims; j++ )
                         center[j] += sample[j];
                     counters[k]++;
@@ -2394,18 +2601,66 @@ double cv::kmeans( InputArray _data, int K,
 
                 if( iter > 0 )
                     max_center_shift = 0;
+                
+                for( k = 0; k < K; k++ )
+                {
+                    if( counters[k] != 0 )
+                        continue;
+
+                    // if some cluster appeared to be empty then:
+                    //   1. find the biggest cluster
+                    //   2. find the farthest from the center point in the biggest cluster
+                    //   3. exclude the farthest point from the biggest cluster and form a new 1-point cluster.
+                    int max_k = 0;
+                    for( int k1 = 1; k1 < K; k1++ )
+                    {
+                        if( counters[max_k] < counters[k1] )
+                            max_k = k1;
+                    }
+                    
+                    double max_dist = 0;                        
+                    int farthest_i = -1;
+                    float* new_center = centers.ptr<float>(k);
+                    float* old_center = centers.ptr<float>(max_k);
+                    float* _old_center = temp.ptr<float>(); // normalized
+                    float scale = 1.f/counters[max_k];
+                    for( j = 0; j < dims; j++ )
+                        _old_center[j] = old_center[j]*scale;
+                    
+                    for( i = 0; i < N; i++ )
+                    {
+                        if( labels[i] != max_k )
+                            continue;
+                        sample = data.ptr<float>(i);
+                        double dist = normL2Sqr_(sample, _old_center, dims);
+                            
+                        if( max_dist <= dist )
+                        {
+                            max_dist = dist;
+                            farthest_i = i;
+                        }
+                    }
+                    
+                    counters[max_k]--;
+                    counters[k]++;
+                    labels[farthest_i] = k;
+                    sample = data.ptr<float>(farthest_i);
+                    
+                    for( j = 0; j < dims; j++ )
+                    {
+                        old_center[j] -= sample[j];
+                        new_center[j] += sample[j];
+                    }
+                }
 
                 for( k = 0; k < K; k++ )
                 {
                     float* center = centers.ptr<float>(k);
-                    if( counters[k] != 0 )
-                    {
-                        float scale = 1.f/counters[k];
-                        for( j = 0; j < dims; j++ )
-                            center[j] *= scale;
-                    }
-                    else
-                        generateRandomCenter(_box, center, rng);
+                    CV_Assert( counters[k] != 0 );
+
+                    float scale = 1.f/counters[k];
+                    for( j = 0; j < dims; j++ )
+                        center[j] *= scale;
                     
                     if( iter > 0 )
                     {
@@ -2420,6 +2675,9 @@ double cv::kmeans( InputArray _data, int K,
                     }
                 }
             }
+            
+            if( ++iter == MAX(criteria.maxCount, 2) || max_center_shift <= criteria.epsilon )
+                break;
 
             // assign labels
             compactness = 0;
@@ -2432,7 +2690,7 @@ double cv::kmeans( InputArray _data, int K,
                 for( k = 0; k < K; k++ )
                 {
                     const float* center = centers.ptr<float>(k);
-                    double dist = distance(sample, center, dims);
+                    double dist = normL2Sqr_(sample, center, dims);
 
                     if( min_dist > dist )
                     {
@@ -2614,7 +2872,14 @@ cvKMeans2( const CvArr* _samples, int cluster_count, CvArr* _labels,
     if( _centers )
     {
         centers = cv::cvarrToMat(_centers);
+
         centers = centers.reshape(1);
+        data = data.reshape(1);
+
+        CV_Assert( !centers.empty() );
+        CV_Assert( centers.rows == cluster_count );
+        CV_Assert( centers.cols == data.cols );
+        CV_Assert( centers.depth() == data.depth() );
     }
     CV_Assert( labels.isContinuous() && labels.type() == CV_32S &&
         (labels.cols == 1 || labels.rows == 1) &&
@@ -2632,8 +2897,16 @@ cvKMeans2( const CvArr* _samples, int cluster_count, CvArr* _labels,
 namespace cv
 {
 
-Mat Mat::reshape(int, int, const int*) const
+Mat Mat::reshape(int _cn, int _newndims, const int* _newsz) const
 {
+    if(_newndims == dims)
+    {
+        if(_newsz == 0)
+            return reshape(_cn);
+        if(_newndims == 2)
+            return reshape(_cn, _newsz[0]);
+    }
+
     CV_Error(CV_StsNotImplemented, "");
     // TBD
     return Mat();
@@ -3343,6 +3616,28 @@ SparseMat::operator CvSparseMat*() const
     return m;
 }
 
+uchar* SparseMat::ptr(int i0, bool createMissing, size_t* hashval)
+{
+    CV_Assert( hdr && hdr->dims == 1 );
+    size_t h = hashval ? *hashval : hash(i0);
+    size_t hidx = h & (hdr->hashtab.size() - 1), nidx = hdr->hashtab[hidx];
+    uchar* pool = &hdr->pool[0];
+    while( nidx != 0 )
+    {
+        Node* elem = (Node*)(pool + nidx);
+        if( elem->hashval == h && elem->idx[0] == i0 )
+            return &value<uchar>(elem);
+        nidx = elem->next;
+    }
+    
+    if( createMissing )
+    {
+        int idx[] = { i0 };
+        return newNode( idx, h );
+    }
+    return 0;
+}
+    
 uchar* SparseMat::ptr(int i0, int i1, bool createMissing, size_t* hashval)
 {
     CV_Assert( hdr && hdr->dims == 2 );

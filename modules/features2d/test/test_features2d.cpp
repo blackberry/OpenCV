@@ -269,13 +269,15 @@ static Mat readMatFromBin( const string& filename )
     if( f )
     {
         int rows, cols, type, dataSize;
-        fread( (void*)&rows, sizeof(int), 1, f );
-        fread( (void*)&cols, sizeof(int), 1, f );
-        fread( (void*)&type, sizeof(int), 1, f );
-        fread( (void*)&dataSize, sizeof(int), 1, f );
+        size_t elements_read1 = fread( (void*)&rows, sizeof(int), 1, f );
+        size_t elements_read2 = fread( (void*)&cols, sizeof(int), 1, f );
+        size_t elements_read3 = fread( (void*)&type, sizeof(int), 1, f );
+        size_t elements_read4 = fread( (void*)&dataSize, sizeof(int), 1, f );
+        CV_Assert(elements_read1 == 1 && elements_read2 == 1 && elements_read3 == 1 && elements_read4 == 1);
 
         uchar* data = (uchar*)cvAlloc(dataSize);
-        fread( (void*)data, 1, dataSize, f );
+        size_t elements_read = fread( (void*)data, 1, dataSize, f );
+        CV_Assert(elements_read == (size_t)(dataSize));
         fclose(f);
 
         return Mat( rows, cols, type, data );
@@ -440,7 +442,7 @@ protected:
             fs.open( string(ts->get_data_path()) + FEATURES2D_DIR + "/keypoints.xml.gz", FileStorage::WRITE );
             if( fs.isOpened() )
             {
-                SurfFeatureDetector fd;
+                ORB fd;
                 fd.detect(img, keypoints);
                 write( fs, "keypoints", keypoints );
             }
@@ -491,7 +493,7 @@ private:
     CV_DescriptorExtractorTest& operator=(const CV_DescriptorExtractorTest&) { return *this; }
 };
 
-template<typename T, typename Distance>
+/*template<typename T, typename Distance>
 class CV_CalonderDescriptorExtractorTest : public CV_DescriptorExtractorTest<Distance>
 {
 public:
@@ -506,7 +508,7 @@ protected:
                 new CalonderDescriptorExtractor<T>( string(CV_DescriptorExtractorTest<Distance>::ts->get_data_path()) +
                                                     FEATURES2D_DIR + "/calonder_classifier.rtc");
     }
-};
+};*/
 
 /****************************************************************************************\
 *                       Algorithmic tests for descriptor matchers                        *
@@ -669,7 +671,7 @@ void CV_DescriptorMatcherTest::matchTest( const Mat& query, const Mat& train )
             int badCount = 0;
             for( size_t i = 0; i < matches.size(); i++ )
             {
-                DMatch match = matches[i];
+                DMatch& match = matches[i];
                 if( (match.queryIdx != (int)i) || (match.trainIdx != (int)i*countFactor) || (match.imgIdx != 0) )
                     badCount++;
             }
@@ -678,6 +680,33 @@ void CV_DescriptorMatcherTest::matchTest( const Mat& query, const Mat& train )
                 ts->printf( cvtest::TS::LOG, "%f - too large bad matches part while test match() function (1).\n",
                             (float)badCount/(float)queryDescCount );
                 ts->set_failed_test_info( cvtest::TS::FAIL_INVALID_OUTPUT );
+            }
+        }
+    }
+
+    // test const version of match() for the same query and test descriptors
+    {
+        vector<DMatch> matches;
+        dmatcher->match( query, query, matches );
+
+        if( (int)matches.size() != query.rows )
+        {
+            ts->printf(cvtest::TS::LOG, "Incorrect matches count while test match() function for the same query and test descriptors (1).\n");
+            ts->set_failed_test_info( cvtest::TS::FAIL_INVALID_OUTPUT );
+        }
+        else
+        {
+            for( size_t i = 0; i < matches.size(); i++ )
+            {
+                DMatch& match = matches[i];
+                //std::cout << match.distance << std::endl;
+
+                if( match.queryIdx != (int)i || match.trainIdx != (int)i || std::abs(match.distance) > FLT_EPSILON )
+                {
+                    ts->printf( cvtest::TS::LOG, "Bad match (i=%d, queryIdx=%d, trainIdx=%d, distance=%f) while test match() function for the same query and test descriptors (1).\n",
+                                i, match.queryIdx, match.trainIdx, match.distance );
+                    ts->set_failed_test_info( cvtest::TS::FAIL_INVALID_OUTPUT );
+                }
             }
         }
     }
@@ -709,7 +738,7 @@ void CV_DescriptorMatcherTest::matchTest( const Mat& query, const Mat& train )
             int badCount = 0;
             for( size_t i = 0; i < matches.size(); i++ )
             {
-                DMatch match = matches[i];
+                DMatch& match = matches[i];
                 int shift = dmatcher->isMaskSupported() ? 1 : 0;
                 {
                     if( i < queryDescCount/2 )
@@ -762,7 +791,7 @@ void CV_DescriptorMatcherTest::knnMatchTest( const Mat& query, const Mat& train 
                     int localBadCount = 0;
                     for( int k = 0; k < knn; k++ )
                     {
-                        DMatch match = matches[i][k];
+                        DMatch& match = matches[i][k];
                         if( (match.queryIdx != (int)i) || (match.trainIdx != (int)i*countFactor+k) || (match.imgIdx != 0) )
                             localBadCount++;
                     }
@@ -814,7 +843,7 @@ void CV_DescriptorMatcherTest::knnMatchTest( const Mat& query, const Mat& train 
                     int localBadCount = 0;
                     for( int k = 0; k < knn; k++ )
                     {
-                        DMatch match = matches[i][k];
+                        DMatch& match = matches[i][k];
                         {
                             if( i < queryDescCount/2 )
                             {
@@ -866,7 +895,7 @@ void CV_DescriptorMatcherTest::radiusMatchTest( const Mat& query, const Mat& tra
                     badCount++;
                 else
                 {
-                    DMatch match = matches[i][0];
+                    DMatch& match = matches[i][0];
                     if( (match.queryIdx != (int)i) || (match.trainIdx != (int)i*countFactor) || (match.imgIdx != 0) )
                         badCount++;
                 }
@@ -918,7 +947,7 @@ void CV_DescriptorMatcherTest::radiusMatchTest( const Mat& query, const Mat& tra
                 int localBadCount = 0;
                 for( int k = 0; k < needMatchCount; k++ )
                 {
-                    DMatch match = matches[i][k];
+                    DMatch& match = matches[i][k];
                     {
                         if( i < queryDescCount/2 )
                         {
@@ -991,21 +1020,9 @@ TEST( Features2d_Detector_MSER, regression )
     test.safe_run();
 }
 
-TEST( Features2d_Detector_SIFT, regression )
-{
-    CV_FeatureDetectorTest test( "detector-sift", FeatureDetector::create("SIFT") );
-    test.safe_run();
-}
-
 TEST( Features2d_Detector_STAR, regression )
 {
     CV_FeatureDetectorTest test( "detector-star", FeatureDetector::create("STAR") );
-    test.safe_run();
-}
-
-TEST( Features2d_Detector_SURF, regression )
-{
-    CV_FeatureDetectorTest test( "detector-surf", FeatureDetector::create("SURF") );
     test.safe_run();
 }
 
@@ -1027,27 +1044,10 @@ TEST( Features2d_Detector_PyramidFAST, regression )
     test.safe_run();
 }
 
-/*
- * Descriptors
- */
-TEST( Features2d_DescriptorExtractor_SIFT, regression )
-{
-    CV_DescriptorExtractorTest<L2<float> > test( "descriptor-sift", 0.03f,
-                                                  DescriptorExtractor::create("SIFT"), 8.06652f  );
-    test.safe_run();
-}
-
-TEST( Features2d_DescriptorExtractor_SURF, regression )
-{
-    CV_DescriptorExtractorTest<L2<float> > test( "descriptor-surf",  0.035f,
-                                                 DescriptorExtractor::create("SURF"), 0.147372f );
-    test.safe_run();
-}
-
 TEST( Features2d_DescriptorExtractor_ORB, regression )
 {
     // TODO adjust the parameters below
-    CV_DescriptorExtractorTest<Hamming> test( "descriptor-orb",  (CV_DescriptorExtractorTest<Hamming>::DistanceType)3.f,
+    CV_DescriptorExtractorTest<Hamming> test( "descriptor-orb",  (CV_DescriptorExtractorTest<Hamming>::DistanceType)12.f,
                                                  DescriptorExtractor::create("ORB"), 0.010f );
     test.safe_run();
 }
@@ -1056,20 +1056,6 @@ TEST( Features2d_DescriptorExtractor_BRIEF, regression )
 {
     CV_DescriptorExtractorTest<Hamming> test( "descriptor-brief",  1,
                                                DescriptorExtractor::create("BRIEF"), 0.00527548f );
-    test.safe_run();
-}
-
-/*TEST( Features2d_DescriptorExtractor_OpponentSIFT, regression )
-{
-    CV_DescriptorExtractorTest<L2<float> > test( "descriptor-opponent-sift", 0.18f,
-                                                 DescriptorExtractor::create("OpponentSIFT"), 8.06652f  );
-    test.safe_run();
-}*/
-
-TEST( Features2d_DescriptorExtractor_OpponentSURF, regression )
-{
-    CV_DescriptorExtractorTest<L2<float> > test( "descriptor-opponent-surf",  0.18f,
-                                                 DescriptorExtractor::create("OpponentSURF"), 0.147372f );
     test.safe_run();
 }
 
@@ -1096,7 +1082,7 @@ TEST( Features2d_DescriptorExtractor_Calonder_float, regression )
  */
 TEST( Features2d_DescriptorMatcher_BruteForce, regression )
 {
-    CV_DescriptorMatcherTest test( "descriptor-matcher-brute-force", new BruteForceMatcher<L2<float> >, 0.01f );
+    CV_DescriptorMatcherTest test( "descriptor-matcher-brute-force", new BFMatcher(NORM_L2), 0.01f );
     test.safe_run();
 }
 
@@ -1104,4 +1090,52 @@ TEST( Features2d_DescriptorMatcher_FlannBased, regression )
 {
     CV_DescriptorMatcherTest test( "descriptor-matcher-flann-based", new FlannBasedMatcher, 0.04f );
     test.safe_run();
+}
+
+
+TEST(Features2D_ORB, _1996)
+{
+    cv::Ptr<cv::FeatureDetector> fd = cv::FeatureDetector::create("ORB");
+    cv::Ptr<cv::DescriptorExtractor> de = cv::DescriptorExtractor::create("ORB");
+
+    Mat image = cv::imread(string(cvtest::TS::ptr()->get_data_path()) + "shared/lena.jpg");
+    ASSERT_FALSE(image.empty());
+
+    Mat roi(image.size(), CV_8UC1, Scalar(0));
+
+    Point poly[] = {Point(100, 20), Point(300, 50), Point(400, 200), Point(10, 500)};
+    fillConvexPoly(roi, poly, int(sizeof(poly) / sizeof(poly[0])), Scalar(255));
+
+    std::vector<cv::KeyPoint> keypoints;
+    fd->detect(image, keypoints, roi);
+    cv::Mat descriptors;
+    de->compute(image, keypoints, descriptors);
+
+    //image.setTo(Scalar(255,255,255), roi);
+
+    int roiViolations = 0;
+    for(std::vector<cv::KeyPoint>::const_iterator kp = keypoints.begin(); kp != keypoints.end(); ++kp)
+    {
+        int x = cvRound(kp->pt.x);
+        int y = cvRound(kp->pt.y);
+
+        ASSERT_LE(0, x);
+        ASSERT_LE(0, y);
+        ASSERT_GT(image.cols, x);
+        ASSERT_GT(image.rows, y);
+
+        // if (!roi.at<uchar>(y,x))
+        // {
+        //     roiViolations++;
+        //     circle(image, kp->pt, 3, Scalar(0,0,255));
+        // }
+    }
+
+    // if(roiViolations)
+    // {
+    //     imshow("img", image);
+    //     waitKey();
+    // }
+
+    ASSERT_EQ(0, roiViolations);
 }

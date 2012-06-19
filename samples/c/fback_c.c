@@ -1,5 +1,6 @@
 #include "opencv2/video/tracking.hpp"
 #include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc_c.h"
 #include <stdio.h>
 void help()
 {
@@ -24,7 +25,7 @@ void drawOptFlowMap(const CvMat* flow, CvMat* cflowmap, int step,
         }
 }
 
-int main(int argc, char** argv)
+int main()
 {
     CvCapture* capture = cvCreateCameraCapture(0);
     CvMat* prevgray = 0, *gray = 0, *flow = 0, *cflow = 0;

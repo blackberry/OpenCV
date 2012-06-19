@@ -3,7 +3,7 @@ Common Interfaces of Generic Descriptor Matchers
 
 .. highlight:: cpp
 
-Matchers of keypoint descriptors in OpenCV have wrappers with a common interface that enables you to easily switch 
+Matchers of keypoint descriptors in OpenCV have wrappers with a common interface that enables you to easily switch
 between different algorithms solving the same problem. This section is devoted to matching descriptors
 that cannot be represented as vectors in a multidimensional space. ``GenericDescriptorMatcher`` is a more generic interface for descriptors. It does not make any assumptions about descriptor representation.
 Every descriptor with the
@@ -130,7 +130,7 @@ GenericDescriptorMatcher::isMaskSupported
 ---------------------------------------------
 Returns ``true`` if a generic descriptor matcher supports masking permissible matches.
 
-.. ocv:function:: void GenericDescriptorMatcher::isMaskSupported()
+.. ocv:function:: bool GenericDescriptorMatcher::isMaskSupported()
 
 
 
@@ -151,12 +151,12 @@ Classifies keypoints from a query set.
     :param trainKeypoints: Keypoints from a train image.
 
 The method classifies each keypoint from a query set. The first variant of the method takes a train image and its keypoints as an input argument. The second variant uses the internally stored training collection that can be built using the ``GenericDescriptorMatcher::add`` method.
-    
+
 The methods do the following:
-    
+
 #.
     Call the ``GenericDescriptorMatcher::match`` method to find correspondence between the query set and the training set.
-        
+
 #.
     Set the ``class_id`` field of each keypoint from the query set to ``class_id`` of the corresponding keypoint from the training set.
 
@@ -195,8 +195,8 @@ Finds the ``k`` best matches for each query keypoint.
 .. ocv:function:: void GenericDescriptorMatcher::knnMatch(           const Mat& queryImage, vector<KeyPoint>& queryKeypoints,      const Mat& trainImage, vector<KeyPoint>& trainKeypoints,      vector<vector<DMatch> >& matches, int k,       const Mat& mask=Mat(), bool compactResult=false ) const
 
 .. ocv:function:: void GenericDescriptorMatcher::knnMatch(           const Mat& queryImage, vector<KeyPoint>& queryKeypoints,      vector<vector<DMatch> >& matches, int k,       const vector<Mat>& masks=vector<Mat>(),       bool compactResult=false )
-    
-The methods are extended variants of ``GenericDescriptorMatch::match``. The parameters are similar, and the  the semantics is similar to ``DescriptorMatcher::knnMatch``. But this class does not require explicitly computed keypoint descriptors.
+
+The methods are extended variants of ``GenericDescriptorMatch::match``. The parameters are similar, and the semantics is similar to ``DescriptorMatcher::knnMatch``. But this class does not require explicitly computed keypoint descriptors.
 
 
 
@@ -231,132 +231,16 @@ GenericDescriptorMatcher::clone
 -----------------------------------
 Clones the matcher.
 
-.. ocv:function:: Ptr<GenericDescriptorMatcher> GenericDescriptorMatcher::clone( bool emptyTrainData ) const
+.. ocv:function:: Ptr<GenericDescriptorMatcher> GenericDescriptorMatcher::clone( bool emptyTrainData=false ) const
 
     :param emptyTrainData: If ``emptyTrainData`` is false, the method creates a deep copy of the object, that is, copies
             both parameters and train data. If ``emptyTrainData`` is true, the method creates an object copy with the current parameters
             but with empty train data.
 
 
-OneWayDescriptorMatcher
------------------------
-.. ocv:class:: OneWayDescriptorMatcher
-
-Wrapping class for computing, matching, and classifying descriptors using the
-:ocv:class:`OneWayDescriptorBase` class. ::
-
-    class OneWayDescriptorMatcher : public GenericDescriptorMatcher
-    {
-    public:
-        class Params
-        {
-        public:
-            static const int POSE_COUNT = 500;
-            static const int PATCH_WIDTH = 24;
-            static const int PATCH_HEIGHT = 24;
-            static float GET_MIN_SCALE() { return 0.7f; }
-            static float GET_MAX_SCALE() { return 1.5f; }
-            static float GET_STEP_SCALE() { return 1.2f; }
-
-            Params( int poseCount = POSE_COUNT,
-                    Size patchSize = Size(PATCH_WIDTH, PATCH_HEIGHT),
-                    string pcaFilename = string(),
-                    string trainPath = string(), string trainImagesList = string(),
-                    float minScale = GET_MIN_SCALE(), float maxScale = GET_MAX_SCALE(),
-                    float stepScale = GET_STEP_SCALE() );
-
-            int poseCount;
-            Size patchSize;
-            string pcaFilename;
-            string trainPath;
-            string trainImagesList;
-
-            float minScale, maxScale, stepScale;
-        };
-
-        OneWayDescriptorMatcher( const Params& params=Params() );
-        virtual ~OneWayDescriptorMatcher();
-
-        void initialize( const Params& params, const Ptr<OneWayDescriptorBase>& base=Ptr<OneWayDescriptorBase>() );
-
-        // Clears keypoints stored in collection and OneWayDescriptorBase
-        virtual void clear();
-
-        virtual void train();
-
-        virtual bool isMaskSupported();
-
-        virtual void read( const FileNode &fn );
-        virtual void write( FileStorage& fs ) const;
-
-        virtual Ptr<GenericDescriptorMatcher> clone( bool emptyTrainData=false ) const;
-    protected:
-        ...
-    };
-
-
-
-
-FernDescriptorMatcher
----------------------
-.. ocv:class:: FernDescriptorMatcher
-
-Wrapping class for computing, matching, and classifying descriptors using the
-:ocv:class:`FernClassifier` class. ::
-
-    class FernDescriptorMatcher : public GenericDescriptorMatcher
-    {
-    public:
-        class Params
-        {
-        public:
-            Params( int nclasses=0,
-                    int patchSize=FernClassifier::PATCH_SIZE,
-                    int signatureSize=FernClassifier::DEFAULT_SIGNATURE_SIZE,
-                    int nstructs=FernClassifier::DEFAULT_STRUCTS,
-                    int structSize=FernClassifier::DEFAULT_STRUCT_SIZE,
-                    int nviews=FernClassifier::DEFAULT_VIEWS,
-                    int compressionMethod=FernClassifier::COMPRESSION_NONE,
-                    const PatchGenerator& patchGenerator=PatchGenerator() );
-
-            Params( const string& filename );
-
-            int nclasses;
-            int patchSize;
-            int signatureSize;
-            int nstructs;
-            int structSize;
-            int nviews;
-            int compressionMethod;
-            PatchGenerator patchGenerator;
-
-            string filename;
-        };
-
-        FernDescriptorMatcher( const Params& params=Params() );
-        virtual ~FernDescriptorMatcher();
-
-        virtual void clear();
-
-        virtual void train();
-
-        virtual bool isMaskSupported();
-
-        virtual void read( const FileNode &fn );
-        virtual void write( FileStorage& fs ) const;
-
-        virtual Ptr<GenericDescriptorMatcher> clone( bool emptyTrainData=false ) const;
-
-    protected:
-            ...
-    };
-
-
-
-
 VectorDescriptorMatcher
 -----------------------
-.. ocv:class:: VectorDescriptorMatcher
+.. ocv:class:: VectorDescriptorMatcher : public GenericDescriptorMatcher
 
 Class used for matching descriptors that can be described as vectors in a finite-dimensional space. ::
 

@@ -47,6 +47,7 @@ namespace cv
 // On Win64 optimized versions of DFT and DCT fail the tests (fixed in VS2010)
 #if defined _MSC_VER && !defined CV_ICC && defined _M_X64 && _MSC_VER < 1600
 #pragma optimize("", off)
+#pragma warning( disable : 4748 )
 #endif
 
 /****************************************************************************************\
@@ -1475,9 +1476,9 @@ void cv::dft( InputArray _src0, OutputArray _dst, int flags, int nonzero_rows )
     int elem_size = (int)src.elemSize1(), complex_elem_size = elem_size*2;
     int factors[34];
     bool inplace_transform = false;
-    int ipp_norm_flag = 0;
 #ifdef HAVE_IPP
     void *spec_r = 0, *spec_c = 0;
+    int ipp_norm_flag = !(flags & DFT_SCALE) ? 8 : inv ? 2 : 1;
 #endif
 
     CV_Assert( type == CV_32FC1 || type == CV_32FC2 || type == CV_64FC1 || type == CV_64FC2 );
@@ -1505,8 +1506,6 @@ void cv::dft( InputArray _src0, OutputArray _dst, int flags, int nonzero_rows )
         ((src.cols == 1 && (!src.isContinuous() || !dst.isContinuous())) ||
          (src.cols > 1 && inv && real_transform)) )
         stage = 1;
-
-    ipp_norm_flag = !(flags & DFT_SCALE) ? 8 : inv ? 2 : 1;
 
     for(;;)
     {
@@ -1630,7 +1629,7 @@ void cv::dft( InputArray _src0, OutputArray _dst, int flags, int nonzero_rows )
             uchar* tmp_buf = 0;
             int dptr_offset = 0;
             int dst_full_len = len*elem_size;
-            int _flags = inv + (src.channels() != dst.channels() ?
+            int _flags = (int)inv + (src.channels() != dst.channels() ?
                          DFT_COMPLEX_INPUT_OR_OUTPUT : 0);
             if( use_buf )
             {
@@ -2248,7 +2247,7 @@ void cv::dct( InputArray _src0, OutputArray _dst, int flags )
     _dst.create( src.rows, src.cols, type );
     Mat dst = _dst.getMat();
 
-    DCTFunc dct_func = dct_tbl[inv + (depth == CV_64F)*2];
+    DCTFunc dct_func = dct_tbl[(int)inv + (depth == CV_64F)*2];
 
     if( (flags & DFT_ROWS) || src.rows == 1 ||
         (src.cols == 1 && (src.isContinuous() && dst.isContinuous())))

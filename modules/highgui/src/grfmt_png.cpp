@@ -59,6 +59,11 @@
 #include <zlib.h>
 #include "grfmt_png.hpp"
 
+#if defined _MSC_VER && _MSC_VER >= 1200
+    // disable warnings related to _setjmp
+    #pragma warning( disable: 4611 )
+#endif
+
 namespace cv
 {
 
@@ -236,7 +241,8 @@ bool  PngDecoder::readData( Mat& img )
                 png_set_palette_to_rgb( png_ptr );
 
             if( m_color_type == PNG_COLOR_TYPE_GRAY && m_bit_depth < 8 )
-#if PNG_LIBPNG_VER_MAJOR*100 + PNG_LIBPNG_VER_MINOR >= 104
+#if (PNG_LIBPNG_VER_MAJOR*10000 + PNG_LIBPNG_VER_MINOR*100 + PNG_LIBPNG_VER_RELEASE >= 10209) || \
+    (PNG_LIBPNG_VER_MAJOR == 1 && PNG_LIBPNG_VER_MINOR == 0 && PNG_LIBPNG_VER_RELEASE >= 18)
                 png_set_expand_gray_1_2_4_to_8( png_ptr );
 #else
                 png_set_gray_1_2_4_to_8( png_ptr );
@@ -312,6 +318,7 @@ void PngEncoder::flushBuf(void*)
 bool  PngEncoder::write( const Mat& img, const vector<int>& params )
 {
     int compression_level = 0;
+    int compression_strategy = Z_RLE;
 
     for( size_t i = 0; i < params.size(); i += 2 )
     {
@@ -319,6 +326,11 @@ bool  PngEncoder::write( const Mat& img, const vector<int>& params )
         {
             compression_level = params[i+1];
             compression_level = MIN(MAX(compression_level, 0), MAX_MEM_LEVEL);
+        }
+        if( params[i] == CV_IMWRITE_PNG_STRATEGY )
+        {
+            compression_strategy = params[i+1];
+            compression_strategy = MIN(MAX(compression_strategy, 0), Z_FIXED); 
         }
     }
 
@@ -366,7 +378,7 @@ bool  PngEncoder::write( const Mat& img, const vector<int>& params )
                         png_set_filter(png_ptr, PNG_FILTER_TYPE_BASE, PNG_FILTER_SUB);
                         png_set_compression_level(png_ptr, Z_BEST_SPEED);
                     }
-                    png_set_compression_strategy(png_ptr, Z_HUFFMAN_ONLY);
+                    png_set_compression_strategy(png_ptr, compression_strategy);
 
                     png_set_IHDR( png_ptr, info_ptr, width, height, depth == CV_8U ? 8 : 16,
                         channels == 1 ? PNG_COLOR_TYPE_GRAY :

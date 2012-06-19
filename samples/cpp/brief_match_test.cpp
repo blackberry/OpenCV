@@ -103,15 +103,9 @@ int main(int argc, const char ** argv)
 
   cout << "done computing descriptors... took " << t << " seconds" << endl;
 
-  //Do matching with 2 methods using features2d
-  cout << "matching with BruteForceMatcher<HammingLUT>" << endl;
-  BruteForceMatcher<HammingLUT> matcher;
-  vector<DMatch> matches_lut;
-  float lut_time = (float)match(kpts_1, kpts_2, matcher, desc_1, desc_2, matches_lut);
-  cout << "done BruteForceMatcher<HammingLUT> matching. took " << lut_time << " seconds" << endl;
-
+  //Do matching using features2d
   cout << "matching with BruteForceMatcher<Hamming>" << endl;
-  BruteForceMatcher<Hamming> matcher_popcount;
+  BFMatcher matcher_popcount(NORM_HAMMING);
   vector<DMatch> matches_popcount;
   double pop_time = match(kpts_1, kpts_2, matcher_popcount, desc_1, desc_2, matches_popcount);
   cout << "done BruteForceMatcher<Hamming> matching. took " << pop_time << " seconds" << endl;
@@ -123,7 +117,7 @@ int main(int argc, const char ** argv)
 
   Mat outimg;
   drawMatches(im2, kpts_2, im1, kpts_1, matches_popcount, outimg, Scalar::all(-1), Scalar::all(-1),
-              reinterpret_cast<const vector<char>&> (outlier_mask));
+              *(const vector<char>*)(void*)(&outlier_mask));
   imshow("matches - popcount - outliers removed", outimg);
 
   Mat warped;

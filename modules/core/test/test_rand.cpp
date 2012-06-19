@@ -109,6 +109,10 @@ void Core_RandTest::run( int )
         int dist_type = cvtest::randInt(rng) % (CV_RAND_NORMAL+1);
         int i, k, SZ = N/cn;
         Scalar A, B;
+
+        double eps = 1.e-4;
+        if (depth == CV_64F)
+            eps = 1.e-7;
         
         bool do_sphere_test = dist_type == CV_RAND_UNI;
         Mat arr[2], hist[4];
@@ -170,7 +174,7 @@ void Core_RandTest::run( int )
             }
         }
         
-        if( maxk >= 1 && norm(arr[0], arr[1], NORM_INF) != 0 )
+        if( maxk >= 1 && norm(arr[0], arr[1], NORM_INF) > eps)
         {
             ts->printf( cvtest::TS::LOG, "RNG output depends on the array lengths (some generated numbers get lost?)" );
             ts->set_failed_test_info( cvtest::TS::FAIL_INVALID_OUTPUT );
@@ -300,4 +304,38 @@ void Core_RandTest::run( int )
 
 TEST(Core_Rand, quality) { Core_RandTest test; test.safe_run(); }
 
+
+class Core_RandRangeTest : public cvtest::BaseTest
+{
+public:
+    Core_RandRangeTest() {}
+    ~Core_RandRangeTest() {}   
+protected:
+    void run(int)
+    {
+        Mat a(Size(1280, 720), CV_8U, Scalar(20));
+        Mat af(Size(1280, 720), CV_32F, Scalar(20));
+        theRNG().fill(a, RNG::UNIFORM, -DBL_MAX, DBL_MAX);
+        theRNG().fill(af, RNG::UNIFORM, -DBL_MAX, DBL_MAX);
+        int n0 = 0, n255 = 0, nx = 0;
+        int nfmin = 0, nfmax = 0, nfx = 0;
+        
+        for( int i = 0; i < a.rows; i++ )
+            for( int j = 0; j < a.cols; j++ )
+            {
+                int v = a.at<uchar>(i,j);
+                double vf = af.at<float>(i,j);
+                if( v == 0 ) n0++;
+                else if( v == 255 ) n255++;
+                else nx++;
+                if( vf < FLT_MAX*-0.999f ) nfmin++;
+                else if( vf > FLT_MAX*0.999f ) nfmax++;
+                else nfx++;
+            }
+        CV_Assert( n0 > nx*2 && n255 > nx*2 );
+        CV_Assert( nfmin > nfx*2 && nfmax > nfx*2 );
+    }
+};
+
+TEST(Core_Rand, range) { Core_RandRangeTest test; test.safe_run(); }
 

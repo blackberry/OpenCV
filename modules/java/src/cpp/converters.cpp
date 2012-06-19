@@ -180,16 +180,16 @@ void vector_Point3d_to_Mat(vector<Point3d>& v_point, Mat& mat)
     mat = Mat(v_point, true);
 }
 
-
+#ifdef HAVE_OPENCV_FEATURES2D
 //vector_KeyPoint
 void Mat_to_vector_KeyPoint(Mat& mat, vector<KeyPoint>& v_kp)
 {
     v_kp.clear();
-    CHECK_MAT(mat.type()==CV_64FC(7) && mat.cols==1);
+    CHECK_MAT(mat.type()==CV_32FC(7) && mat.cols==1);
     for(int i=0; i<mat.rows; i++)
     {
-        Vec<double, 7> v = mat.at< Vec<double, 7> >(i, 0);
-        KeyPoint kp((float)v[0], (float)v[1], (float)v[2], (float)v[3], (float)v[4], (int)v[5], (int)v[6]);
+        Vec<float, 7> v = mat.at< Vec<float, 7> >(i, 0);
+        KeyPoint kp(v[0], v[1], v[2], v[3], v[4], (int)v[5], (int)v[6]);
         v_kp.push_back(kp);
     }
     return;
@@ -199,13 +199,14 @@ void Mat_to_vector_KeyPoint(Mat& mat, vector<KeyPoint>& v_kp)
 void vector_KeyPoint_to_Mat(vector<KeyPoint>& v_kp, Mat& mat)
 {
     int count = v_kp.size();
-    mat.create(count, 1, CV_64FC(7));
+    mat.create(count, 1, CV_32FC(7));
     for(int i=0; i<count; i++)
     {
         KeyPoint kp = v_kp[i];
-        mat.at< Vec<double, 7> >(i, 0) = Vec<double, 7>(kp.pt.x, kp.pt.y, kp.size, kp.angle, kp.response, kp.octave, kp.class_id);
+        mat.at< Vec<float, 7> >(i, 0) = Vec<float, 7>(kp.pt.x, kp.pt.y, kp.size, kp.angle, kp.response, kp.octave, kp.class_id);
     }
 }
+#endif
 
 
 //vector_Mat
@@ -239,15 +240,16 @@ void vector_Mat_to_Mat(std::vector<cv::Mat>& v_mat, cv::Mat& mat)
     }
 }
 
+#ifdef HAVE_OPENCV_FEATURES2D
 //vector_DMatch
 void Mat_to_vector_DMatch(Mat& mat, vector<DMatch>& v_dm)
 {
     v_dm.clear();
-    CHECK_MAT(mat.type()==CV_64FC4 && mat.cols==1);
+    CHECK_MAT(mat.type()==CV_32FC4 && mat.cols==1);
     for(int i=0; i<mat.rows; i++)
     {
-        Vec<double, 4> v = mat.at< Vec<double, 4> >(i, 0);
-        DMatch dm((int)v[0], (int)v[1], (int)v[2], (float)v[3]);
+        Vec<float, 4> v = mat.at< Vec<float, 4> >(i, 0);
+        DMatch dm((int)v[0], (int)v[1], (int)v[2], v[3]);
         v_dm.push_back(dm);
     }
     return;
@@ -257,13 +259,14 @@ void Mat_to_vector_DMatch(Mat& mat, vector<DMatch>& v_dm)
 void vector_DMatch_to_Mat(vector<DMatch>& v_dm, Mat& mat)
 {
     int count = v_dm.size();
-    mat.create(count, 1, CV_64FC4);
+    mat.create(count, 1, CV_32FC4);
     for(int i=0; i<count; i++)
     {
         DMatch dm = v_dm[i];
-        mat.at< Vec<double, 4> >(i, 0) = Vec<double, 4>(dm.queryIdx, dm.trainIdx, dm.imgIdx, dm.distance);
+        mat.at< Vec<float, 4> >(i, 0) = Vec<float, 4>(dm.queryIdx, dm.trainIdx, dm.imgIdx, dm.distance);
     }
 }
+#endif
 
 void Mat_to_vector_vector_Point(Mat& mat, vector< vector< Point > >& vv_pt)
 {
@@ -278,6 +281,33 @@ void Mat_to_vector_vector_Point(Mat& mat, vector< vector< Point > >& vv_pt)
     }
 }
 
+void Mat_to_vector_vector_Point2f(Mat& mat, vector< vector< Point2f > >& vv_pt)
+{
+    vector<Mat> vm;
+    vm.reserve( mat.rows );
+    Mat_to_vector_Mat(mat, vm);
+    for(size_t i=0; i<vm.size(); i++)
+    {
+        vector<Point2f> vpt;
+        Mat_to_vector_Point2f(vm[i], vpt);
+        vv_pt.push_back(vpt);
+    }
+}
+
+void Mat_to_vector_vector_Point3f(Mat& mat, vector< vector< Point3f > >& vv_pt)
+{
+    vector<Mat> vm;
+    vm.reserve( mat.rows );
+    Mat_to_vector_Mat(mat, vm);
+    for(size_t i=0; i<vm.size(); i++)
+    {
+        vector<Point3f> vpt;
+        Mat_to_vector_Point3f(vm[i], vpt);
+        vv_pt.push_back(vpt);
+    }
+}
+
+#ifdef HAVE_OPENCV_FEATURES2D
 void Mat_to_vector_vector_KeyPoint(Mat& mat, vector< vector< KeyPoint > >& vv_kp)
 {
     vector<Mat> vm;
@@ -329,6 +359,7 @@ void vector_vector_DMatch_to_Mat(vector< vector< DMatch > >& vv_dm, Mat& mat)
     }
     vector_Mat_to_Mat(vm, mat);
 }
+#endif
 
 void Mat_to_vector_vector_char(Mat& mat, vector< vector< char > >& vv_ch)
 {
@@ -356,6 +387,19 @@ void vector_vector_char_to_Mat(vector< vector< char > >& vv_ch, Mat& mat)
     vector_Mat_to_Mat(vm, mat);
 }
 
+void vector_vector_Point_to_Mat(vector< vector< Point > >& vv_pt, Mat& mat)
+{
+    vector<Mat> vm;
+    vm.reserve( vv_pt.size() );
+    for(size_t i=0; i<vv_pt.size(); i++)
+    {
+        Mat m;
+        vector_Point_to_Mat(vv_pt[i], m);
+        vm.push_back(m);
+    }
+    vector_Mat_to_Mat(vm, mat);
+}
+
 void vector_vector_Point2f_to_Mat(vector< vector< Point2f > >& vv_pt, Mat& mat)
 {
     vector<Mat> vm;
@@ -367,6 +411,24 @@ void vector_vector_Point2f_to_Mat(vector< vector< Point2f > >& vv_pt, Mat& mat)
         vm.push_back(m);
     }
     vector_Mat_to_Mat(vm, mat);
+}
+
+void vector_vector_Point3f_to_Mat(vector< vector< Point3f > >& vv_pt, Mat& mat)
+{
+    vector<Mat> vm;
+    vm.reserve( vv_pt.size() );
+    for(size_t i=0; i<vv_pt.size(); i++)
+    {
+        Mat m;
+        vector_Point3f_to_Mat(vv_pt[i], m);
+        vm.push_back(m);
+    }
+    vector_Mat_to_Mat(vm, mat);
+}
+
+void vector_Vec4i_to_Mat(vector<Vec4i>& v_vec, Mat& mat)
+{
+    mat = Mat(v_vec, true);
 }
 
 void vector_Vec4f_to_Mat(vector<Vec4f>& v_vec, Mat& mat)

@@ -66,7 +66,7 @@ FaceDetection::FaceDetection()
     m_seqRects = NULL;
     m_iNumLayers = 16;
     assert(m_iNumLayers <= MAX_LAYERS);
-    m_pFaceList = new List();
+    m_pFaceList = new FaceDetectionList();
     
 
 
@@ -241,7 +241,7 @@ void FaceDetection::CreateResults(CvSeq * lpSeq)
 void FaceDetection::ResetImage()
 {
         delete m_pFaceList;
-        m_pFaceList = new List();
+        m_pFaceList = new FaceDetectionList();
 
 }//FaceDetection::ResetImage
 
@@ -302,120 +302,137 @@ void FaceDetection::FindFace(IplImage *img)
 void FaceDetection::FindCandidats()
 {
     bool bFound1 = false;
-    MouthFaceTemplate * lpFaceTemplate1;
-    RFace * lpFace1; 
+    MouthFaceTemplate * lpFaceTemplate1 = 0;
+    RFace * lpFace1 = 0;
     bool bInvalidRect1 = false;
     CvRect * lpRect1  = NULL;
     
-    for (int i = 0; i < m_seqRects->total; i++)
+    try
     {
-        CvContourRect* pRect = (CvContourRect*)cvGetSeqElem(m_seqRects, i);
-        CvRect rect = pRect->r;
-        if (rect.width >= 2*rect.height)
+        for (int i = 0; i < m_seqRects->total; i++)
         {
+            CvContourRect* pRect = (CvContourRect*)cvGetSeqElem(m_seqRects, i);
+            CvRect rect = pRect->r;
+            if (rect.width >= 2*rect.height)
+            {
 
-            lpFaceTemplate1 = new MouthFaceTemplate(3,rect,3*(double)rect.width/(double)4,
-                                                           3*(double)rect.width/(double)4,
-                                                             (double)rect.width/(double)2,
-                                                             (double)rect.width/(double)2);
+                lpFaceTemplate1 = new MouthFaceTemplate(3,rect,3*(double)rect.width/(double)4,
+                                                               3*(double)rect.width/(double)4,
+                                                                 (double)rect.width/(double)2,
+                                                                 (double)rect.width/(double)2);
     
 
-            lpFace1 = new RFace(lpFaceTemplate1);
+                lpFace1 = new RFace(lpFaceTemplate1);
             
-            for (int j = 0; j < m_seqRects->total; j++)
-            {
-                CvContourRect* pRect = (CvContourRect*)cvGetSeqElem(m_seqRects, j);
+                for (int j = 0; j < m_seqRects->total; j++)
+                {
+                    CvContourRect* pRect = (CvContourRect*)cvGetSeqElem(m_seqRects, j);
                 
-                if ( !bInvalidRect1 )
-                {
-                    lpRect1 = NULL;
-                    lpRect1 = new CvRect();
-                    *lpRect1 = pRect->r;
-                }else
-                {
-                    delete lpRect1;
-                    lpRect1 = new CvRect();
-                    *lpRect1 = pRect->r;
+                    if ( !bInvalidRect1 )
+                    {
+                        lpRect1 = NULL;
+                        lpRect1 = new CvRect();
+                        *lpRect1 = pRect->r;
+                    }else
+                    {
+                        delete lpRect1;
+                        lpRect1 = new CvRect();
+                        *lpRect1 = pRect->r;
+                    }
+                
+                
+                    if ( lpFace1->isFeature(lpRect1) )
+                    { 
+                        bFound1 = true;
+                        bInvalidRect1 = false;
+                    }else
+                        bInvalidRect1 = true;
+    
+
                 }
-                
-                
-                if ( lpFace1->isFeature(lpRect1) )
-                { 
-                    bFound1 = true;
-                    bInvalidRect1 = false;
+
+            
+                if (bFound1)
+                {
+                    m_pFaceList->AddElem(lpFace1);
+                    bFound1 = false;
+                    lpFace1 = NULL;
                 }else
-                    bInvalidRect1 = true;
+                {
+                    delete lpFace1;
+                    lpFace1 = NULL;
+                }
+
+            
+                delete lpFaceTemplate1;
+            }
     
-
-            }
-
-            
-            if (bFound1)
-            {
-                m_pFaceList->AddElem(lpFace1);
-                bFound1 = false;
-                lpFace1 = NULL;
-            }else
-            {
-                delete lpFace1;
-                lpFace1 = NULL;
-            }
-
-            
-            delete lpFaceTemplate1;
         }
-    
     }
-
+    catch(...)
+    {
+        delete lpFaceTemplate1;
+        delete lpFace1;
+        throw;
+    }
 }
 
 
 void FaceDetection::PostBoostingFindCandidats(IplImage * FaceImage)
 {
-    BoostingFaceTemplate * lpFaceTemplate1;
-    RFace * lpFace1; 
+    BoostingFaceTemplate * lpFaceTemplate1 = 0;
+    RFace * lpFace1 = 0; 
     bool bInvalidRect1 = false;
     CvRect * lpRect1  = NULL;
     
-    if ( ( !FaceImage->roi ) )
-        lpFaceTemplate1 = new BoostingFaceTemplate(3,cvRect(0,0,FaceImage->width,FaceImage->height));
-    else
-        lpFaceTemplate1 = new BoostingFaceTemplate(3,cvRect(FaceImage->roi->xOffset,FaceImage->roi->yOffset,
-                                                            FaceImage->roi->width,FaceImage->roi->height));
-    
-    lpFace1 = new RFace(lpFaceTemplate1);
-
-    for (int i = 0; i < m_seqRects->total; i++)
+    try
     {
-        CvContourRect* pRect = (CvContourRect*)cvGetSeqElem(m_seqRects, i);
+        if ( ( !FaceImage->roi ) )
+            lpFaceTemplate1 = new BoostingFaceTemplate(3,cvRect(0,0,FaceImage->width,FaceImage->height));
+        else
+            lpFaceTemplate1 = new BoostingFaceTemplate(3,cvRect(FaceImage->roi->xOffset,FaceImage->roi->yOffset,
+                                                                FaceImage->roi->width,FaceImage->roi->height));
+    
+        lpFace1 = new RFace(lpFaceTemplate1);
+
+        for (int i = 0; i < m_seqRects->total; i++)
+        {
+            CvContourRect* pRect = (CvContourRect*)cvGetSeqElem(m_seqRects, i);
         
-        if ( !bInvalidRect1 )
-        {
-            lpRect1 = NULL;
-            lpRect1 = new CvRect();
-            *lpRect1 = pRect->r;
-        }else
-        {
-            delete lpRect1;
-            lpRect1 = new CvRect();
-            *lpRect1 = pRect->r;
+            if ( !bInvalidRect1 )
+            {
+                lpRect1 = NULL;
+                lpRect1 = new CvRect();
+                *lpRect1 = pRect->r;
+            }else
+            {
+                delete lpRect1;
+                lpRect1 = new CvRect();
+                *lpRect1 = pRect->r;
+            }
+        
+        
+            if ( lpFace1->isFeature(lpRect1) )
+            { 
+                //bFound1 = true;
+                bInvalidRect1 = false;
+            }else
+                bInvalidRect1 = true;
+
+    
         }
-        
-        
-        if ( lpFace1->isFeature(lpRect1) )
-        { 
-            //bFound1 = true;
-            bInvalidRect1 = false;
-        }else
-            bInvalidRect1 = true;
-
     
+        m_pFaceList->AddElem(lpFace1);
+        lpFace1 = NULL;
+    
+        delete lpFaceTemplate1;
     }
-    
-    m_pFaceList->AddElem(lpFace1);
-    
-    delete lpFaceTemplate1;
-
+    catch(...)
+    {
+        delete lpFace1;
+        delete lpFaceTemplate1;
+        throw;
+    }
 }//void FaceDetection::PostBoostingFindCandidats(IplImage * FaceImage)
 
 /////////////////////////
@@ -424,16 +441,16 @@ void FaceDetection::PostBoostingFindCandidats(IplImage * FaceImage)
 
 
 //////
-//List Class
+//FaceDetectionList Class
 /////
-ListElem::ListElem()
+FaceDetectionListElem::FaceDetectionListElem()
 {
     m_pNext = this;
     m_pPrev = this;
     m_pFace = NULL;
-}///ListElem::ListElem()
+}///FaceDetectionListElem::FaceDetectionListElem()
 
-ListElem::ListElem(Face * pFace,ListElem * pHead)
+FaceDetectionListElem::FaceDetectionListElem(Face * pFace,FaceDetectionListElem * pHead)
 {
     m_pNext = pHead;
     m_pPrev = pHead->m_pPrev;
@@ -441,26 +458,26 @@ ListElem::ListElem(Face * pFace,ListElem * pHead)
     pHead->m_pPrev = this;
 
     m_pFace = pFace;
-}//ListElem::ListElem(Face * pFace)
+}//FaceDetectionListElem::FaceDetectionListElem(Face * pFace)
 
 
 
-ListElem::~ListElem()
+FaceDetectionListElem::~FaceDetectionListElem()
 {
     delete m_pFace;
     m_pNext->m_pPrev = m_pPrev;
     m_pPrev->m_pNext = m_pNext;
 
-}//ListElem::~ListElem()
+}//FaceDetectionListElem::~FaceDetectionListElem()
 
-List::List()
+FaceDetectionList::FaceDetectionList()
 {
-    m_pHead = new ListElem();
+    m_pHead = new FaceDetectionListElem();
     m_FacesCount = 0;
     m_pCurElem = m_pHead;
-}//List::List()
+}//FaceDetectionList::FaceDetectionList()
 
-List::~List()
+FaceDetectionList::~FaceDetectionList()
 {
     void * tmp;
     while((tmp = m_pHead->m_pNext->m_pFace) != 0)
@@ -468,19 +485,19 @@ List::~List()
 
     delete m_pHead;
 
-}//List::~List()
+}//FaceDetectionList::~FaceDetectionList()
 
 
-int List::AddElem(Face * pFace)
+int FaceDetectionList::AddElem(Face * pFace)
 {
-    new ListElem(pFace,m_pHead);
+    new FaceDetectionListElem(pFace,m_pHead);
     return m_FacesCount++;
-}//List::AddElem(Face * pFace)
+}//FaceDetectionList::AddElem(Face * pFace)
 
-Face * List::GetData()
+Face * FaceDetectionList::GetData()
 {
     m_pCurElem = m_pCurElem->m_pNext;
     return m_pCurElem->m_pFace;
-}//Face * List::GetData()
+}//Face * FaceDetectionList::GetData()
 
 

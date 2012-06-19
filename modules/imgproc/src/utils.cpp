@@ -203,8 +203,33 @@ void cv::copyMakeBorder( InputArray _src, OutputArray _dst, int top, int bottom,
     Mat src = _src.getMat();
     CV_Assert( top >= 0 && bottom >= 0 && left >= 0 && right >= 0 );
     
+    if( src.isSubmatrix() && (borderType & BORDER_ISOLATED) == 0 )
+    {
+        Size wholeSize;
+        Point ofs;
+        src.locateROI(wholeSize, ofs);
+        int dtop = std::min(ofs.y, top);
+        int dbottom = std::min(wholeSize.height - src.rows - ofs.y, bottom);
+        int dleft = std::min(ofs.x, left);
+        int dright = std::min(wholeSize.width - src.cols - ofs.x, right);
+        src.adjustROI(dtop, dbottom, dleft, dright);
+        top -= dtop;
+        left -= dleft;
+        bottom -= dbottom;
+        right -= dright;
+    }
+
     _dst.create( src.rows + top + bottom, src.cols + left + right, src.type() );
     Mat dst = _dst.getMat();
+
+    if(top == 0 && left == 0 && bottom == 0 && right == 0)
+    {
+        if(src.data != dst.data || src.step != dst.step)
+            src.copyTo(dst);
+        return;
+    }
+    
+    borderType &= ~BORDER_ISOLATED;
     
     if( borderType != BORDER_CONSTANT )
         copyMakeBorder_8u( src.data, src.step, src.size(),
@@ -224,6 +249,15 @@ void cv::copyMakeBorder( InputArray _src, OutputArray _dst, int top, int bottom,
                                 dst.data, dst.step, dst.size(),
                                 top, left, (int)src.elemSize(), (uchar*)(double*)buf );
     }
+}
+
+
+double cv::PSNR(InputArray _src1, InputArray _src2)
+{
+    Mat src1 = _src1.getMat(), src2 = _src2.getMat();
+    CV_Assert( src1.depth() == CV_8U );
+    double diff = std::sqrt(norm(src1, src2, NORM_L2SQR)/(src1.total()*src1.channels()));
+    return 20*log10(255./(diff+DBL_EPSILON));
 }
 
 

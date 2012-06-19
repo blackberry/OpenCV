@@ -98,9 +98,9 @@ float search_with_ground_truth(NNIndex<Distance>& index, const Matrix<typename D
     KNNResultSet<DistanceType> resultSet(nn+skipMatches);
     SearchParams searchParams(checks);
 
-    int* indices = new int[nn+skipMatches];
-    DistanceType* dists = new DistanceType[nn+skipMatches];
-    int* neighbors = indices + skipMatches;
+    std::vector<int> indices(nn+skipMatches);
+    std::vector<DistanceType> dists(nn+skipMatches);
+    int* neighbors = &indices[skipMatches];
 
     int correct = 0;
     DistanceType distR = 0;
@@ -112,18 +112,15 @@ float search_with_ground_truth(NNIndex<Distance>& index, const Matrix<typename D
         correct = 0;
         distR = 0;
         for (size_t i = 0; i < testData.rows; i++) {
-            resultSet.init(indices, dists);
+            resultSet.init(&indices[0], &dists[0]);
             index.findNeighbors(resultSet, testData[i], searchParams);
 
             correct += countCorrectMatches(neighbors,matches[i], nn);
-            distR += computeDistanceRaport<Distance>(inputData, testData[i], neighbors, matches[i], testData.cols, nn, distance);
+            distR += computeDistanceRaport<Distance>(inputData, testData[i], neighbors, matches[i], (int)testData.cols, nn, distance);
         }
         t.stop();
     }
     time = float(t.value/repeats);
-
-    delete[] indices;
-    delete[] dists;
 
     float precicion = (float)correct/(nn*testData.rows);
 

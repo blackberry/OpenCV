@@ -316,7 +316,9 @@ int CvCaptureCAM::startCaptureDevice(int cameraNum) {
 	capture = [[CaptureDelegate alloc] init]; 
 	
 	QTCaptureDevice *device; 
-	NSArray* devices = [QTCaptureDevice inputDevicesWithMediaType:QTMediaTypeVideo];
+    NSArray* devices = [[[QTCaptureDevice inputDevicesWithMediaType:QTMediaTypeVideo]
+	        arrayByAddingObjectsFromArray:[QTCaptureDevice inputDevicesWithMediaType:QTMediaTypeMuxed]] retain];
+	
 	if ([devices count] == 0) {
 		cout << "QTKit didn't find any attached Video Input Devices!" << endl; 
 		[localpool drain]; 
@@ -863,6 +865,17 @@ bool CvCaptureFile::setProperty(int property_id, double value) {
 			break;
 		case CV_CAP_PROP_FPS:
 			//etval = currentFPS;  
+			break; 
+		case CV_CAP_PROP_FRAME_COUNT:
+			{
+			NSArray *videoTracks = [mCaptureSession tracksOfMediaType:QTMediaTypeVideo];
+			if ([videoTracks count] > 0) {
+				QTMedia *media = [[videoTracks objectAtIndex:0] media];
+				retval = [[media attributeForKey:QTMediaSampleCountAttribute] longValue];
+			} else {
+				retval = 0;
+			}
+			}
 			break; 
 		case CV_CAP_PROP_FOURCC:
 		default:

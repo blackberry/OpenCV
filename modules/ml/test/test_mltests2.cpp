@@ -391,7 +391,6 @@ float ann_calc_error( CvANN_MLP* ann, CvMLData* _data, map<int, int>& cls_map, i
     int cls_count = (int)cls_map.size();
     Mat output( 1, cls_count, CV_32FC1 );
     CvMat _output = CvMat(output);
-    map<int, int>::iterator b_it = cls_map.begin();
     for( int i = 0; i < sample_count; i++ )
     {
         CvMat sample;
@@ -452,7 +451,6 @@ CV_MLBaseTest::CV_MLBaseTest(const char* _modelName)
     nbayes = 0;
     knearest = 0;
     svm = 0;
-    em = 0;
     ann = 0;
     dtree = 0;
     boost = 0;
@@ -464,8 +462,6 @@ CV_MLBaseTest::CV_MLBaseTest(const char* _modelName)
         knearest = new CvKNearest;
     else if( !modelName.compare(CV_SVM) )
         svm = new CvSVM;
-    else if( !modelName.compare(CV_EM) )
-        em = new CvEM;
     else if( !modelName.compare(CV_ANN) )
         ann = new CvANN_MLP;
     else if( !modelName.compare(CV_DTREE) )
@@ -488,8 +484,6 @@ CV_MLBaseTest::~CV_MLBaseTest()
         delete knearest;
     if( svm )
         delete svm;
-    if( em )
-        delete em;
     if( ann )
         delete ann;
     if( dtree )
@@ -757,8 +751,6 @@ void CV_MLBaseTest::save( const char* filename )
         knearest->save( filename );
     else if( !modelName.compare(CV_SVM) )
         svm->save( filename );
-    else if( !modelName.compare(CV_EM) )
-        em->save( filename );
     else if( !modelName.compare(CV_ANN) )
         ann->save( filename );
     else if( !modelName.compare(CV_DTREE) )
@@ -779,8 +771,6 @@ void CV_MLBaseTest::load( const char* filename )
         knearest->load( filename );
     else if( !modelName.compare(CV_SVM) )
         svm->load( filename );
-    else if( !modelName.compare(CV_EM) )
-        em->load( filename );
     else if( !modelName.compare(CV_ANN) )
         ann->load( filename );
     else if( !modelName.compare(CV_DTREE) )

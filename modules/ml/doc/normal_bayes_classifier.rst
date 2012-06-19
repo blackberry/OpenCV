@@ -11,7 +11,7 @@ This simple classification model assumes that feature vectors from each class ar
 
 CvNormalBayesClassifier
 -----------------------
-.. ocv:class:: CvNormalBayesClassifier
+.. ocv:class:: CvNormalBayesClassifier : public CvStatModel
 
 Bayes classifier for normally distributed data.
 
@@ -25,7 +25,7 @@ Default and training constructors.
 
 .. ocv:function:: CvNormalBayesClassifier::CvNormalBayesClassifier( const CvMat* trainData, const CvMat* responses, const CvMat* varIdx=0, const CvMat* sampleIdx=0 )
 
-.. ocv:pyfunction:: cv2.NormalBayesClassifier(trainData, responses[, varIdx[, sampleIdx]]) -> <NormalBayesClassifier object>
+.. ocv:pyfunction:: cv2.NormalBayesClassifier([trainData, responses[, varIdx[, sampleIdx]]]) -> <NormalBayesClassifier object>
 
 The constructors follow conventions of :ocv:func:`CvStatModel::CvStatModel`. See :ocv:func:`CvStatModel::train` for parameters descriptions.
 
@@ -41,7 +41,7 @@ Trains the model.
 
     :param update: Identifies whether the model should be trained from scratch (``update=false``) or should be updated using the new training data (``update=true``).
 
-The method trains the Normal Bayes classifier. It follows the conventions of the generic :ocv:func:`CvStatModel::train` approach with the following limitations: 
+The method trains the Normal Bayes classifier. It follows the conventions of the generic :ocv:func:`CvStatModel::train` approach with the following limitations:
 
 * Only ``CV_ROW_SAMPLE`` data layout is supported.
 * Input variables are all ordered.
@@ -60,3 +60,4 @@ Predicts the response for sample(s).
 
 The method estimates the most probable classes for input vectors. Input vectors (one or more) are stored as rows of the matrix ``samples``. In case of multiple input vectors, there should be one output vector ``results``. The predicted class for a single input vector is returned by the method.
 
+The function is parallelized with the TBB library.

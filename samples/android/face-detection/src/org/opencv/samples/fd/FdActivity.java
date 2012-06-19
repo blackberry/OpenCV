@@ -1,6 +1,8 @@
 package org.opencv.samples.fd;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
@@ -14,12 +16,44 @@ public class FdActivity extends Activity {
     private MenuItem            mItemFace40;
     private MenuItem            mItemFace30;
     private MenuItem            mItemFace20;
-
-    public static float         minFaceSize = 0.5f;
+    private MenuItem            mItemType;
+    
+    private FdView				mView;
+    
+    private int                 mDetectorType = 0;
+    private String[]            mDetectorName; 
 
     public FdActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
+        mDetectorName = new String[2];
+        mDetectorName[FdView.JAVA_DETECTOR] = "Java";
+        mDetectorName[FdView.NATIVE_DETECTOR] = "Native (tracking)";
     }
+
+    @Override
+	protected void onPause() {
+        Log.i(TAG, "onPause");
+		super.onPause();
+		mView.releaseCamera();
+	}
+
+	@Override
+	protected void onResume() {
+        Log.i(TAG, "onResume");
+		super.onResume();
+		if( !mView.openCamera() ) {
+			AlertDialog ad = new AlertDialog.Builder(this).create();  
+			ad.setCancelable(false); // This blocks the 'BACK' button  
+			ad.setMessage("Fatal error: can't open camera!");  
+			ad.setButton("OK", new DialogInterface.OnClickListener() {  
+			    public void onClick(DialogInterface dialog, int which) {  
+			        dialog.dismiss();                      
+					finish();
+			    }  
+			});  
+			ad.show();
+		}
+	}
 
     /** Called when the activity is first created. */
     @Override
@@ -27,7 +61,10 @@ public class FdActivity extends Activity {
         Log.i(TAG, "onCreate");
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        setContentView(new FdView(this));
+        mView = new FdView(this);
+        mView.setDetectorType(mDetectorType);
+        mView.setMinFaceSize(0.2f);
+        setContentView(mView);
     }
 
     @Override
@@ -37,6 +74,8 @@ public class FdActivity extends Activity {
         mItemFace40 = menu.add("Face size 40%");
         mItemFace30 = menu.add("Face size 30%");
         mItemFace20 = menu.add("Face size 20%");
+        mItemType   = menu.add(mDetectorName[mDetectorType]);
+        		
         return true;
     }
 
@@ -44,13 +83,19 @@ public class FdActivity extends Activity {
     public boolean onOptionsItemSelected(MenuItem item) {
         Log.i(TAG, "Menu Item selected " + item);
         if (item == mItemFace50)
-            minFaceSize = 0.5f;
+            mView.setMinFaceSize(0.5f);
         else if (item == mItemFace40)
-            minFaceSize = 0.4f;
+        	mView.setMinFaceSize(0.4f);
         else if (item == mItemFace30)
-            minFaceSize = 0.3f;
+        	mView.setMinFaceSize(0.3f);
         else if (item == mItemFace20)
-            minFaceSize = 0.2f;
+        	mView.setMinFaceSize(0.2f);
+        else if (item == mItemType)
+        {
+        	mDetectorType = (mDetectorType + 1) % mDetectorName.length;
+        	item.setTitle(mDetectorName[mDetectorType]);
+        	mView.setDetectorType(mDetectorType);
+        }
         return true;
     }
 }

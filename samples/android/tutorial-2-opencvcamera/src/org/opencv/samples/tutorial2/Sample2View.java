@@ -5,12 +5,13 @@ import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
-import org.opencv.imgproc.Imgproc;
 import org.opencv.highgui.Highgui;
 import org.opencv.highgui.VideoCapture;
+import org.opencv.imgproc.Imgproc;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.util.Log;
 import android.view.SurfaceHolder;
 
 class Sample2View extends SampleCvViewBase {
@@ -23,15 +24,15 @@ class Sample2View extends SampleCvViewBase {
     }
 
     @Override
-    public void surfaceChanged(SurfaceHolder _holder, int format, int width, int height) {
-        super.surfaceChanged(_holder, format, width, height);
-
+    public void surfaceCreated(SurfaceHolder holder) {
         synchronized (this) {
             // initialize Mats before usage
             mGray = new Mat();
             mRgba = new Mat();
             mIntermediateMat = new Mat();
         }
+        
+        super.surfaceCreated(holder);
     }
 
     @Override
@@ -43,22 +44,25 @@ class Sample2View extends SampleCvViewBase {
             break;
         case Sample2NativeCamera.VIEW_MODE_RGBA:
             capture.retrieve(mRgba, Highgui.CV_CAP_ANDROID_COLOR_FRAME_RGBA);
-            Core.putText(mRgba, "OpenCV + Android", new Point(10, 100), 3/* CV_FONT_HERSHEY_COMPLEX */, 2, new Scalar(255, 0, 0, 255), 3);
+            Core.putText(mRgba, "OpenCV + Android", new Point(10, 100), 3, 2, new Scalar(255, 0, 0, 255), 3);
             break;
         case Sample2NativeCamera.VIEW_MODE_CANNY:
             capture.retrieve(mGray, Highgui.CV_CAP_ANDROID_GREY_FRAME);
             Imgproc.Canny(mGray, mIntermediateMat, 80, 100);
             Imgproc.cvtColor(mIntermediateMat, mRgba, Imgproc.COLOR_GRAY2BGRA, 4);
-            break;
+			break;
         }
 
         Bitmap bmp = Bitmap.createBitmap(mRgba.cols(), mRgba.rows(), Bitmap.Config.ARGB_8888);
 
-        if (Utils.matToBitmap(mRgba, bmp))
+        try {
+        	Utils.matToBitmap(mRgba, bmp);
             return bmp;
-
-        bmp.recycle();
-        return null;
+        } catch(Exception e) {
+        	Log.e("org.opencv.samples.tutorial2", "Utils.matToBitmap() throws an exception: " + e.getMessage());
+            bmp.recycle();
+            return null;
+        }
     }
 
     @Override

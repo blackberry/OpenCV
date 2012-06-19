@@ -53,6 +53,11 @@
 #include "opencv2/imgproc/imgproc_c.h"
 #include "opencv2/core/internal.hpp"
 
+#if defined WIN32 || defined _WIN32
+//required windows.h has to be included by the opencv2/core/internal.hpp
+void  FillBitmapInfo( BITMAPINFO* bmi, int width, int height, int bpp, int origin );
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -62,16 +67,6 @@
 
 #ifdef HAVE_TEGRA_OPTIMIZATION
 #include "opencv2/highgui/highgui_tegra.hpp"
-#endif
-
-#if defined WIN32 || defined _WIN32
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#undef min
-#undef max
-
-void  FillBitmapInfo( BITMAPINFO* bmi, int width, int height, int bpp, int origin );
 #endif
 
 /* Errors */
@@ -98,7 +93,7 @@ struct CvCapture
     virtual bool setProperty(int, double) { return 0; }
     virtual bool grabFrame() { return true; }
     virtual IplImage* retrieveFrame(int) { return 0; }
-	virtual int getCaptureDomain() { return CV_CAP_ANY; } // Return the type of the capture object: CV_CAP_VFW, etc...
+    virtual int getCaptureDomain() { return CV_CAP_ANY; } // Return the type of the capture object: CV_CAP_VFW, etc...
 };
 
 /*************************** CvVideoWriter structure ****************************/
@@ -132,8 +127,11 @@ CvVideoWriter* cvCreateVideoWriter_VFW( const char* filename, int fourcc,
                                         double fps, CvSize frameSize, int is_color );
 CvCapture* cvCreateCameraCapture_DShow( int index );
 CvCapture* cvCreateCameraCapture_OpenNI( int index );
+CvCapture* cvCreateFileCapture_OpenNI( const char* filename );
 CvCapture* cvCreateCameraCapture_Android( int index );
 CvCapture* cvCreateCameraCapture_XIMEA( int index );
+CvCapture* cvCreateCameraCapture_AVFoundation(int index);
+
 
 CVAPI(int) cvHaveImageReader(const char* filename);
 CVAPI(int) cvHaveImageWriter(const char* filename);
@@ -142,6 +140,9 @@ CvCapture* cvCreateFileCapture_Images(const char* filename);
 CvVideoWriter* cvCreateVideoWriter_Images(const char* filename);
 
 CvCapture* cvCreateFileCapture_XINE (const char* filename);
+
+
+
 
 #define CV_CAP_GSTREAMER_1394		0
 #define CV_CAP_GSTREAMER_V4L		1
@@ -161,29 +162,52 @@ CvCapture * cvCreateCameraCapture_QT  (const int     index);
 CvVideoWriter* cvCreateVideoWriter_QT ( const char* filename, int fourcc,
                                         double fps, CvSize frameSize, int is_color );
 
+CvCapture* cvCreateFileCapture_AVFoundation (const char * filename);
+CvVideoWriter* cvCreateVideoWriter_AVFoundation( const char* filename, int fourcc,
+                                                double fps, CvSize frameSize, int is_color );
+
+
 CvCapture * cvCreateCameraCapture_Unicap  (const int     index);
 CvCapture * cvCreateCameraCapture_PvAPI  (const int     index);
 CvVideoWriter* cvCreateVideoWriter_GStreamer( const char* filename, int fourcc,
                                             double fps, CvSize frameSize, int is_color );
 
-//Yannick Verdie 2010                                 
+//Yannick Verdie 2010
+void cvSetModeWindow_W32(const char* name, double prop_value);
+void cvSetModeWindow_GTK(const char* name, double prop_value);
+void cvSetModeWindow_CARBON(const char* name, double prop_value);
+
 double cvGetModeWindow_W32(const char* name);
 double cvGetModeWindow_GTK(const char* name);
 double cvGetModeWindow_CARBON(const char* name);
 
-void cvSetModeWindow_W32(const char* name, double prop_value);
-void cvSetModeWindow_GTK(const char* name, double prop_value);
-void cvSetModeWindow_CARBON(const char* name, double prop_value);
+double cvGetPropWindowAutoSize_W32(const char* name);
+double cvGetPropWindowAutoSize_GTK(const char* name);
+
+double cvGetRatioWindow_W32(const char* name);
+double cvGetRatioWindow_GTK(const char* name);
+
+double cvGetOpenGlProp_W32(const char* name);
+double cvGetOpenGlProp_GTK(const char* name);
 
 //for QT
 #if defined (HAVE_QT)
 double cvGetModeWindow_QT(const char* name);
 void cvSetModeWindow_QT(const char* name, double prop_value);
+
 double cvGetPropWindow_QT(const char* name);
 void cvSetPropWindow_QT(const char* name,double prop_value);
+
 double cvGetRatioWindow_QT(const char* name);
 void cvSetRatioWindow_QT(const char* name,double prop_value);
+
+double cvGetOpenGlProp_QT(const char* name);
 #endif
+
+// OpenGL
+typedef void (CV_CDECL *CvOpenGlCleanCallback)(void* userdata);
+void icvSetOpenGlCleanCallback(const char* window_name, CvOpenGlCleanCallback callback, void* userdata);
+
 
 /*namespace cv
 {

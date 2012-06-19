@@ -22,7 +22,7 @@ Theory
 Code
 ====
 
-This tutorial code's is shown lines below. You can also download it from `here <https://code.ros.org/svn/opencv/trunk/opencv/samples/cpp/tutorial_code/objectDetection/objectDetection.cpp>`_ . The second version (using LBP for face detection) can be found `here <https://code.ros.org/svn/opencv/trunk/opencv/samples/cpp/tutorial_code/objectDetection/objectDetection2.cpp>`_ 
+This tutorial code's is shown lines below. You can also download it from `here <http://code.opencv.org/svn/opencv/trunk/opencv/samples/cpp/tutorial_code/objectDetection/objectDetection.cpp>`_ . The second version (using LBP for face detection) can be `found here <http://code.opencv.org/svn/opencv/trunk/opencv/samples/cpp/tutorial_code/objectDetection/objectDetection2.cpp>`_ 
 
 .. code-block:: cpp 
 
@@ -63,13 +63,13 @@ This tutorial code's is shown lines below. You can also download it from `here <
      {
        while( true )
        {
-	 frame = cvQueryFrame( capture );
+     frame = cvQueryFrame( capture );
   
- 	 //-- 3. Apply the classifier to the frame
-      	 if( !frame.empty() )
-       	 { detectAndDisplay( frame ); }
-      	 else
-       	 { printf(" --(!) No captured frame -- Break!"); break; }
+     //-- 3. Apply the classifier to the frame
+         if( !frame.empty() )
+         { detectAndDisplay( frame ); }
+         else
+         { printf(" --(!) No captured frame -- Break!"); break; }
       
          int c = waitKey(10);
          if( (char)c == 'c' ) { break; } 
@@ -104,7 +104,7 @@ This tutorial code's is shown lines below. You can also download it from `here <
       for( int j = 0; j < eyes.size(); j++ )
        {
          Point center( faces[i].x + eyes[j].x + eyes[j].width*0.5, faces[i].y + eyes[j].y + eyes[j].height*0.5 ); 
-         int radius = cvRound( (eyes[j].width + eyes[i].height)*0.25 );
+         int radius = cvRound( (eyes[j].width + eyes[j].height)*0.25 );
          circle( frame, center, radius, Scalar( 255, 0, 0 ), 4, 8, 0 );
        }
     } 

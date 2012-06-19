@@ -9,6 +9,7 @@
 using namespace cv;
 using namespace std;
 
+bool help_showed = false;
 
 struct Params
 {
@@ -71,6 +72,14 @@ private:
     double work_fps;
 };
 
+void printHelp()
+{
+    cout << "Usage: stereo_match_gpu\n"
+        << "\t--left <left_view> --right <right_view> # must be rectified\n"
+        << "\t--method <stereo_match_method> # BM | BP | CSBP\n"
+        << "\t--ndisp <number> # number of disparity levels\n";
+    help_showed = true;
+}
 
 int main(int argc, char** argv)
 {
@@ -78,12 +87,13 @@ int main(int argc, char** argv)
     {
         if (argc < 2)
         {
-            cout << "Usage: stereo_match_gpu\n"
-                << "\t-l <left_view> -r <right_view> # must be rectified\n"
-                << "\t-m <stereo_match_method> # BM | BP | CSBP\n";
+            printHelp();
             return 1;
         }
-        App app(Params::read(argc, argv));
+        Params args = Params::read(argc, argv);
+        if (help_showed)
+            return -1;
+        App app(args);
         app.run();
     }
     catch (const exception& e)
@@ -105,21 +115,21 @@ Params Params::read(int argc, char** argv)
 {
     Params p;
 
-    for (int i = 1; i < argc - 1; i += 2)
+    for (int i = 1; i < argc; i++)
     {
-        string key = argv[i];
-        string val = argv[i + 1];
-        if (key == "-l") p.left = val;
-        else if (key == "-r") p.right = val;
-        else if (key == "-m") 
+        if (string(argv[i]) == "--left") p.left = argv[++i];
+        else if (string(argv[i]) == "--right") p.right = argv[++i];
+        else if (string(argv[i]) == "--method") 
         {
-            if (val == "BM") p.method = BM;
-            else if (val == "BP") p.method = BP;
-            else if (val == "CSBP") p.method = CSBP;
-            else throw runtime_error("unknown stereo match method: " + val);
+            if (string(argv[i + 1]) == "BM") p.method = BM;
+            else if (string(argv[i + 1]) == "BP") p.method = BP;
+            else if (string(argv[i + 1]) == "CSBP") p.method = CSBP;
+            else throw runtime_error("unknown stereo match method: " + string(argv[i + 1]));
+            i++;
         }
-        else if (key == "-ndisp") p.ndisp = atoi(val.c_str());
-        else throw runtime_error("unknown key: " + key);
+        else if (string(argv[i]) == "--ndisp") p.ndisp = atoi(argv[++i]);
+        else if (string(argv[i]) == "--help") printHelp();
+        else throw runtime_error("unknown key: " + string(argv[i]));
     }
 
     return p;
@@ -129,6 +139,8 @@ Params Params::read(int argc, char** argv)
 App::App(const Params& p)
     : p(p), running(false) 
 {
+    cv::gpu::printShortCudaDeviceInfo(cv::gpu::getDevice());
+
     cout << "stereo_match_gpu sample\n";
     cout << "\nControls:\n"
         << "\tesc - exit\n"
@@ -152,8 +164,8 @@ void App::run()
     if (right_src.empty()) throw runtime_error("can't open file \"" + p.right + "\"");
     cvtColor(left_src, left, CV_BGR2GRAY);
     cvtColor(right_src, right, CV_BGR2GRAY);
-    d_left = left;
-    d_right = right;
+    d_left.upload(left);
+    d_right.upload(right);
 
     imshow("left", left);
     imshow("right", right);
@@ -183,8 +195,8 @@ void App::run()
                 cvtColor(left_src, left, CV_BGR2GRAY);
                 cvtColor(right_src, right, CV_BGR2GRAY);
                 cout << "image_channels: " << left.channels() << endl;
-                d_left = left;
-                d_right = right;
+                d_left.upload(left);
+                d_right.upload(right);
                 imshow("left", left);
                 imshow("right", right);
             }
@@ -196,7 +208,7 @@ void App::run()
         workEnd();
 
         // Show results
-        disp = d_disp;
+        d_disp.download(disp);
         putText(disp, text(), Point(5, 25), FONT_HERSHEY_SIMPLEX, 1.0, Scalar::all(255));
         imshow("disparity", disp);
 
@@ -252,8 +264,8 @@ void App::handleKey(char key)
             cvtColor(left_src, left, CV_BGR2GRAY);
             cvtColor(right_src, right, CV_BGR2GRAY);
         }
-        d_left = left;
-        d_right = right;
+        d_left.upload(left);
+        d_right.upload(right);
         cout << "image_channels: " << left.channels() << endl;
         imshow("left", left);
         imshow("right", right);

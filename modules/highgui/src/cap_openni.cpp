@@ -38,19 +38,18 @@
 // the use of this software, even if advised of the possibility of such damage.
 //
 //M*/
-
 #include "precomp.hpp"
 #include "opencv2/core/core.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
+
 #ifdef HAVE_OPENNI
 
-#define HACK_WITH_XML
-
-#ifdef HACK_WITH_XML
-#include <iostream>
-#include <fstream>
+#if TBB_INTERFACE_VERSION < 5000
+# undef HAVE_TBB
 #endif
 
+#include <iostream>
+#include <queue>
 #include "XnCppWrapper.h"
 
 const std::string XMLConfig =
@@ -67,7 +66,7 @@ const std::string XMLConfig =
                 "</Dumps>"
         "</Log>"
         "<ProductionNodes>"
-                "<Node type=\"Image\" name=\"Image1\">"
+                "<Node type=\"Image\" name=\"Image1\" stopOnError=\"false\">"
                         "<Configuration>"
                                 "<MapOutputMode xRes=\"640\" yRes=\"480\" FPS=\"30\"/>"
                                 "<Mirror on=\"false\"/>"
@@ -80,15 +79,351 @@ const std::string XMLConfig =
                         "</Configuration>"
                 "</Node>"
         "</ProductionNodes>"
-"</OpenNI>";
+"</OpenNI>\n";
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+class ApproximateSyncGrabber
+{
+public:
+    ApproximateSyncGrabber( xn::Context &context,
+                            xn::DepthGenerator &depthGenerator,
+                            xn::ImageGenerator &imageGenerator,
+                            int maxBufferSize, bool isCircleBuffer, int maxTimeDuration ) :
+        context(context), depthGenerator(depthGenerator), imageGenerator(imageGenerator),
+        maxBufferSize(maxBufferSize), isCircleBuffer(isCircleBuffer), maxTimeDuration(maxTimeDuration)
+    {
+        task = 0;
+
+        CV_Assert( depthGenerator.IsValid() );
+        CV_Assert( imageGenerator.IsValid() );
+    }
+
+    void setMaxBufferSize( int _maxBufferSize )
+    {
+        maxBufferSize = _maxBufferSize;
+#ifdef HAVE_TBB
+        task->setMaxBufferSize();
+#endif
+    }
+    inline int getMaxBufferSize() const { return maxBufferSize; }
+
+    void setIsCircleBuffer( bool _isCircleBuffer ) { isCircleBuffer = _isCircleBuffer; }
+    bool getIsCircleBuffer() const { return isCircleBuffer; }
+
+    void setMaxTimeDuration( int _maxTimeDuration ) {  maxTimeDuration = _maxTimeDuration; }
+    int getMaxTimeDuration() const { return maxTimeDuration; }
+
+    bool grab( xn::DepthMetaData& depthMetaData,
+               xn::ImageMetaData& imageMetaData )
+    {
+        CV_Assert( task );
+
+
+        while( task->grab(depthMetaData, imageMetaData) == false )
+        {
+#ifndef HAVE_TBB
+            task->spin();
+#endif
+        }
+        return true;
+
+    }
+
+    void start()
+    {
+        CV_Assert( depthGenerator.IsValid() );
+        CV_Assert( imageGenerator.IsValid() );
+#ifdef HAVE_TBB
+        task = new( tbb::task::allocate_root() ) TBBApproximateSynchronizerTask( *this );
+        tbb::task::enqueue(*task);
+#else
+        task = new ApproximateSynchronizer( *this );
+#endif
+    }
+
+    void finish()
+    {
+#ifdef HAVE_TBB
+        if( task )
+            tbb::task::destroy( *task );
+#else
+        task.release();
+#endif
+    }
+
+    bool isRun() const { return task != 0; }
+
+    xn::Context &context;
+    xn::DepthGenerator &depthGenerator;
+    xn::ImageGenerator &imageGenerator;
+
+private:
+    int maxBufferSize;
+    bool isCircleBuffer;
+    int maxTimeDuration;
+
+    class ApproximateSynchronizerBase
+    {
+    public:
+        ApproximateSynchronizerBase( ApproximateSyncGrabber& approxSyncGrabber ) :
+            approxSyncGrabber(approxSyncGrabber), isDepthFilled(false), isImageFilled(false)
+        {}
+
+        virtual bool isSpinContinue() const = 0;
+        virtual void pushDepthMetaData( xn::DepthMetaData& depthMetaData ) = 0;
+        virtual void pushImageMetaData( xn::ImageMetaData& imageMetaData ) = 0;
+        virtual bool popDepthMetaData( xn::DepthMetaData& depthMetaData ) = 0;
+        virtual bool popImageMetaData( xn::ImageMetaData& imageMetaData ) = 0;
+
+        void spin()
+        {
+            while(isSpinContinue() == true)
+            {
+                XnStatus status = approxSyncGrabber.context.WaitAnyUpdateAll();
+                if( status != XN_STATUS_OK )
+                    continue;
+
+                xn::DepthMetaData depth;
+                xn::ImageMetaData image;
+                approxSyncGrabber.depthGenerator.GetMetaData(depth);
+                approxSyncGrabber.imageGenerator.GetMetaData(image);
+
+                if( depth.Data() && depth.IsDataNew() )
+                    pushDepthMetaData( depth );
+
+                if( image.Data() && image.IsDataNew() )
+                    pushImageMetaData( image );
+            }
+        }
+
+        virtual bool grab( xn::DepthMetaData& depthMetaData,
+                           xn::ImageMetaData& imageMetaData )
+        {
+            while(1)
+            {
+                if( !isDepthFilled )
+                    isDepthFilled = popDepthMetaData(depth);
+                if( !isImageFilled )
+                    isImageFilled = popImageMetaData(image);
+
+                if( !isDepthFilled || !isImageFilled )
+                    break;
+
+                double timeDiff = 1e-3 * std::abs(static_cast<double>(depth.Timestamp()) - static_cast<double>(image.Timestamp()));
+
+                if( timeDiff <= approxSyncGrabber.maxTimeDuration )
+                {
+                    depthMetaData.InitFrom(depth);
+                    imageMetaData.InitFrom(image);
+                    isDepthFilled = isImageFilled = false;
+                    return true;
+                }
+                else
+                {
+                    if( depth.Timestamp() < image.Timestamp() )
+                        isDepthFilled = false;
+                    else
+                        isImageFilled = false;
+                }
+            }
+
+            return false;
+        }
+
+    protected:
+        ApproximateSyncGrabber& approxSyncGrabber;
+        xn::DepthMetaData depth;
+        xn::ImageMetaData image;
+        bool isDepthFilled;
+        bool isImageFilled;
+    };
+
+    // If there isn't TBB the synchronization will be executed in the main thread.
+    class ApproximateSynchronizer: public ApproximateSynchronizerBase
+    {
+    public:
+        ApproximateSynchronizer( ApproximateSyncGrabber& approxSyncGrabber ) :
+            ApproximateSynchronizerBase(approxSyncGrabber)
+        {}
+
+        virtual bool isSpinContinue() const
+        {
+            int maxBufferSize = approxSyncGrabber.getMaxBufferSize();
+            return (maxBufferSize <= 0) || (static_cast<int>(depthQueue.size()) < maxBufferSize &&
+                                           static_cast<int>(imageQueue.size()) < maxBufferSize); // "<" to may push
+        }
+
+        virtual inline void pushDepthMetaData( xn::DepthMetaData& depthMetaData )
+        {
+            cv::Ptr<xn::DepthMetaData> depthPtr = new xn::DepthMetaData;
+            depthPtr->CopyFrom(depthMetaData);
+            depthQueue.push(depthPtr);
+        }
+        virtual inline void pushImageMetaData( xn::ImageMetaData& imageMetaData )
+        {
+            cv::Ptr<xn::ImageMetaData> imagePtr = new xn::ImageMetaData;
+            imagePtr->CopyFrom(imageMetaData);
+            imageQueue.push(imagePtr);
+        }
+        virtual inline bool popDepthMetaData( xn::DepthMetaData& depthMetaData )
+        {
+            if( depthQueue.empty() )
+                return false;
+
+            depthMetaData.CopyFrom(*depthQueue.front());
+            depthQueue.pop();
+            return true;
+        }
+        virtual inline bool popImageMetaData( xn::ImageMetaData& imageMetaData )
+        {
+            if( imageQueue.empty() )
+                return false;
+
+            imageMetaData.CopyFrom(*imageQueue.front());
+            imageQueue.pop();
+            return true;
+        }
+
+    private:
+        std::queue<cv::Ptr<xn::DepthMetaData> > depthQueue;
+        std::queue<cv::Ptr<xn::ImageMetaData> > imageQueue;
+    };
+
+#ifdef HAVE_TBB
+    // If there is TBB the synchronization will be executed in own thread.
+    class TBBApproximateSynchronizer: public ApproximateSynchronizerBase
+    {
+    public:
+        TBBApproximateSynchronizer( ApproximateSyncGrabber& approxSyncGrabber ) :
+            ApproximateSynchronizerBase(approxSyncGrabber)
+        {
+            setMaxBufferSize();
+        }
+
+        void setMaxBufferSize()
+        {
+            int maxBufferSize = ApproximateSynchronizerBase::approxSyncGrabber.getMaxBufferSize();
+            if( maxBufferSize >= 0 )
+            {
+                depthQueue.set_capacity( maxBufferSize );
+                imageQueue.set_capacity( maxBufferSize );
+            }
+        }
+
+        virtual inline bool isSpinContinue() const { return true; }
+
+        virtual inline void pushDepthMetaData( xn::DepthMetaData& depthMetaData )
+        {
+            cv::Ptr<xn::DepthMetaData> depthPtr = new xn::DepthMetaData, tmp;
+            depthPtr->CopyFrom(depthMetaData);
+
+            tbb::mutex mtx;
+            mtx.lock();
+            if( depthQueue.try_push(depthPtr) == false )
+            {
+                if( approxSyncGrabber.getIsCircleBuffer() )
+                {
+                    CV_Assert( depthQueue.try_pop(tmp) );
+                    CV_Assert( depthQueue.try_push(depthPtr) );
+                }
+            }
+            mtx.unlock();
+        }
+
+        virtual inline void pushImageMetaData( xn::ImageMetaData& imageMetaData )
+        {
+            cv::Ptr<xn::ImageMetaData> imagePtr = new xn::ImageMetaData, tmp;
+            imagePtr->CopyFrom(imageMetaData);
+
+            tbb::mutex mtx;
+            mtx.lock();
+            if( imageQueue.try_push(imagePtr) == false )
+            {
+                if( approxSyncGrabber.getIsCircleBuffer() )
+                {
+                    CV_Assert( imageQueue.try_pop(tmp) );
+                    CV_Assert( imageQueue.try_push(imagePtr) );
+                }
+            }
+            mtx.unlock();
+        }
+
+        virtual inline bool popDepthMetaData( xn::DepthMetaData& depthMetaData )
+        {
+            cv::Ptr<xn::DepthMetaData> depthPtr;
+            bool isPop = depthQueue.try_pop(depthPtr);
+            if( isPop )
+                depthMetaData.CopyFrom(*depthPtr);
+            return isPop;
+        }
+        virtual inline bool popImageMetaData( xn::ImageMetaData& imageMetaData )
+        {
+            cv::Ptr<xn::ImageMetaData> imagePtr;
+            bool isPop = imageQueue.try_pop(imagePtr);
+            if( isPop )
+                imageMetaData.CopyFrom(*imagePtr);
+            return isPop;
+        }
+
+    private:
+        tbb::concurrent_bounded_queue<cv::Ptr<xn::DepthMetaData> > depthQueue;
+        tbb::concurrent_bounded_queue<cv::Ptr<xn::ImageMetaData> > imageQueue;
+    };
+
+    class TBBApproximateSynchronizerTask: public tbb::task
+    {
+    public:
+        TBBApproximateSynchronizerTask( ApproximateSyncGrabber& approxSyncGrabber ) :
+            synchronizer(approxSyncGrabber)
+        {}
+
+        void setMaxBufferSize()
+        {
+            synchronizer.setMaxBufferSize();
+        }
+
+        bool grab( xn::DepthMetaData& depthMetaData,
+                   xn::ImageMetaData& imageMetaData )
+        {
+            return synchronizer.grab( depthMetaData, imageMetaData );
+        }
+
+    private:
+        tbb::task* execute()
+        {
+            synchronizer.spin();
+            return 0;
+        }
+        TBBApproximateSynchronizer synchronizer;
+    };
+#endif // HAVE_TBB
+
+#ifdef HAVE_TBB
+    TBBApproximateSynchronizerTask* task;
+#else
+    cv::Ptr<ApproximateSynchronizer> task;
+#endif
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 class CvCapture_OpenNI : public CvCapture
 {
 public:
+    enum { DEVICE_DEFAULT=0, DEVICE_MS_KINECT=0, DEVICE_ASUS_XTION=1, DEVICE_MAX=1 };
+    
     static const int INVALID_PIXEL_VAL = 0;
     static const int INVALID_COORDINATE_VAL = 0;
 
-    CvCapture_OpenNI( int index=0 );
+#ifdef HAVE_TBB
+    static const int DEFAULT_MAX_BUFFER_SIZE = 8;
+#else
+    static const int DEFAULT_MAX_BUFFER_SIZE = 2;
+#endif
+    static const int DEFAULT_IS_CIRCLE_BUFFER = 0;
+    static const int DEFAULT_MAX_TIME_DURATION = 20;
+
+    CvCapture_OpenNI(int index=0);
+    CvCapture_OpenNI(const char * filename);
     virtual ~CvCapture_OpenNI();
 
     virtual double getProperty(int propIdx);
@@ -108,7 +443,7 @@ protected:
         IplImage iplHeader;
     };
 
-    static const int outputTypesCount = 7;
+    static const int outputMapsTypesCount = 7;
 
     IplImage* retrieveDepthMap();
     IplImage* retrievePointCloudMap();
@@ -124,19 +459,25 @@ protected:
     bool setDepthGeneratorProperty(int propIdx, double propVal);
     double getImageGeneratorProperty(int propIdx);
     bool setImageGeneratorProperty(int propIdx, double propVal);
+    double getCommonProperty(int propIdx);
+    bool setCommonProperty(int propIdx, double propVal);
 
     // OpenNI context
     xn::Context context;
-    bool m_isOpened;
+    bool isContextOpened;
+
+    xn::ProductionNode productionNode;
 
     // Data generators with its metadata
     xn::DepthGenerator depthGenerator;
     xn::DepthMetaData  depthMetaData;
-    XnMapOutputMode depthOutputMode;
 
     xn::ImageGenerator imageGenerator;
     xn::ImageMetaData  imageMetaData;
-    XnMapOutputMode imageOutputMode;
+
+    int maxBufferSize, maxTimeDuration; // for approx sync
+    bool isCircleBuffer;
+    cv::Ptr<ApproximateSyncGrabber> approxSyncGrabber;
 
     // Cameras settings:
     // TODO find in OpenNI function to convert z->disparity and remove fields "baseline" and depthFocalLength_VGA
@@ -164,122 +505,208 @@ IplImage* CvCapture_OpenNI::OutputMap::getIplImagePtr()
 
 bool CvCapture_OpenNI::isOpened() const
 {
-    return m_isOpened;
+    return isContextOpened;
 }
+
+XnMapOutputMode defaultMapOutputMode()
+{
+    XnMapOutputMode mode;
+    mode.nXRes = XN_VGA_X_RES;
+    mode.nYRes = XN_VGA_Y_RES;
+    mode.nFPS  = 30;
+    return mode;
+}
+
 
 CvCapture_OpenNI::CvCapture_OpenNI( int index )
 {
-    XnStatus status = XN_STATUS_OK;
-
-    // Initialize image output modes (VGA_30HZ by default).
-    depthOutputMode.nXRes = imageOutputMode.nXRes = XN_VGA_X_RES;
-    depthOutputMode.nYRes = imageOutputMode.nYRes = XN_VGA_Y_RES;
-    depthOutputMode.nFPS = imageOutputMode.nFPS = 30;
-
-    m_isOpened = false;
-    bool isContextInitialized = false;
-
-    // Initialize and configure the context.
-    if( context.Init() == XN_STATUS_OK )
+    int deviceType = DEVICE_DEFAULT;
+    XnStatus status;
+    
+    isContextOpened = false;
+    maxBufferSize = DEFAULT_MAX_BUFFER_SIZE;
+    isCircleBuffer = DEFAULT_IS_CIRCLE_BUFFER;
+    maxTimeDuration = DEFAULT_MAX_TIME_DURATION;
+    
+    if( index >= 10 )
     {
-        // Find devices
-        xn::NodeInfoList devicesList;
-        status = context.EnumerateProductionTrees( XN_NODE_TYPE_DEVICE, NULL, devicesList, 0 );
-        if( status != XN_STATUS_OK )
-        {
-            std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to enumerate production trees: "
-                      << std::string(xnGetStatusString(status)) << std::endl;
-            return;
-        }
-
-        // Chose device according to index
-        xn::NodeInfoList::Iterator it = devicesList.Begin();
-        for( int i = 0; i < index; ++i ) it++;
-
-        xn::NodeInfo deviceNode = *it;
-        status = context.CreateProductionTree( deviceNode );
-        if( status != XN_STATUS_OK )
-        {
-            std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to create production tree: "
-                      << std::string(xnGetStatusString(status)) << std::endl;
-            return;
-        }
-
-#ifdef HACK_WITH_XML
-        // Write configuration to the temporary file.
-        // This is a hack, because there is a bug in RunXmlScript().
-        // TODO: remove hack when bug in RunXmlScript() will be fixed.
-        std::string xmlFilename = "opencv_kinect_configure.xml";
-        std::ofstream outfile( xmlFilename.c_str() );
-        outfile.write( XMLConfig.c_str(), XMLConfig.length() );
-        outfile.close();
-
-        status = context.RunXmlScriptFromFile( xmlFilename.c_str() );
-        if( status != XN_STATUS_OK )
-        {
-            std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to run xml script: "
-                      << std::string(xnGetStatusString(status)) << std::endl;
-            return;
-        }
-
-        // Remove temporary configuration file.
-        remove( xmlFilename.c_str() );
-#else
-        status = context.RunXmlScript( XMLConfig.c_str() );
-#endif
-        isContextInitialized = ( status == XN_STATUS_OK );
+        deviceType = index / 10;
+        index %= 10;
     }
 
-    if( isContextInitialized )
-    {
-        // Associate generators with context.
-        status = depthGenerator.Create( context );
-        if( status != XN_STATUS_OK )\
-        {
-            std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to create depth generator: "
-                      << std::string(xnGetStatusString(status)) << std::endl;
-            return;
-        }
+    if( deviceType > DEVICE_MAX )
+        return;
 
-        imageGenerator.Create( context );
+    // Initialize and configure the context.
+    status = context.Init();
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to initialize the context: "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+
+    // Find devices
+    xn::NodeInfoList devicesList;
+    status = context.EnumerateProductionTrees( XN_NODE_TYPE_DEVICE, NULL, devicesList, 0 );
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to enumerate production trees: "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+
+    // Chose device according to index
+    xn::NodeInfoList::Iterator it = devicesList.Begin();
+    for( int i = 0; i < index; ++i ) it++;
+
+    xn::NodeInfo deviceNode = *it;
+    status = context.CreateProductionTree( deviceNode, productionNode );
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to create production tree: "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+
+    xn::ScriptNode scriptNode;
+    status = context.RunXmlScript( XMLConfig.c_str(), scriptNode );
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to run xml script: "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+
+    // Associate generators with context.
+    // enumerate the nodes to find if depth generator is present
+    xn::NodeInfoList depthList;
+    status = context.EnumerateExistingNodes( depthList, XN_NODE_TYPE_DEPTH );
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to enumerate depth generators: "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+    if( depthList.IsEmpty() )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : The device doesn't have depth generator. Such devices aren't supported now." << std::endl;
+        return;
+    }
+    status = depthGenerator.Create( context );
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to create depth generator: "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+
+    // enumerate the nodes to find if image generator is present
+    xn::NodeInfoList imageList;
+    status = context.EnumerateExistingNodes( imageList, XN_NODE_TYPE_IMAGE );
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to enumerate image generators: "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+
+    if( !imageList.IsEmpty() )
+    {
+        status = imageGenerator.Create( context );
         if( status != XN_STATUS_OK )
         {
             std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to create image generator: "
                       <<  std::string(xnGetStatusString(status)) << std::endl;
             return;
         }
-
-        // Set map output mode.
-        CV_Assert( depthGenerator.SetMapOutputMode( depthOutputMode ) == XN_STATUS_OK ); // xn::DepthGenerator supports VGA only! (Jan 2011)
-        CV_Assert( imageGenerator.SetMapOutputMode( imageOutputMode ) == XN_STATUS_OK );
-
-        //  Start generating data.
-        status = context.StartGeneratingAll();
-        if( status != XN_STATUS_OK )
-        {
-            std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to start generating OpenNI data: "
-                      << std::string(xnGetStatusString(status)) << std::endl;
-            return;
-        }
-
-        if( !readCamerasParams() )
-        {
-            std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Could not read cameras parameters" << std::endl;
-            return;
-        }
-
-        outputMaps.resize( outputTypesCount );
-
-        m_isOpened = true;
     }
 
+    // Set map output mode.
+    if( depthGenerator.IsValid() )
+    {
+        CV_DbgAssert( depthGenerator.SetMapOutputMode(defaultMapOutputMode()) == XN_STATUS_OK ); // xn::DepthGenerator supports VGA only! (Jan 2011)
+    }
+    if( imageGenerator.IsValid() )
+    {
+        CV_DbgAssert( imageGenerator.SetMapOutputMode(defaultMapOutputMode()) == XN_STATUS_OK );
+    }
+
+    if( deviceType == DEVICE_ASUS_XTION )
+    {
+        //ps/asus specific
+        imageGenerator.SetIntProperty("InputFormat", 1 /*XN_IO_IMAGE_FORMAT_YUV422*/);
+        imageGenerator.SetPixelFormat(XN_PIXEL_FORMAT_RGB24);
+        depthGenerator.SetIntProperty("RegistrationType", 1 /*XN_PROCESSING_HARDWARE*/);
+    }
+
+    //  Start generating data.
+    status = context.StartGeneratingAll();
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to start generating OpenNI data: "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+
+    if( !readCamerasParams() )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Could not read cameras parameters" << std::endl;
+        return;
+    }
+
+    outputMaps.resize( outputMapsTypesCount );
+
+    isContextOpened = true;
+
     setProperty(CV_CAP_PROP_OPENNI_REGISTRATION, 1.0);
+}
+
+CvCapture_OpenNI::CvCapture_OpenNI(const char * filename)
+{
+    XnStatus status;
+
+    isContextOpened = false;
+    maxBufferSize = DEFAULT_MAX_BUFFER_SIZE;
+    isCircleBuffer = DEFAULT_IS_CIRCLE_BUFFER;
+    maxTimeDuration = DEFAULT_MAX_TIME_DURATION;
+
+    // Initialize and configure the context.
+    status = context.Init();
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to initialize the context: "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+
+    // Open file
+    status = context.OpenFileRecording( filename, productionNode );
+    if( status != XN_STATUS_OK )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Failed to open input file (" << filename << "): "
+                  << std::string(xnGetStatusString(status)) << std::endl;
+        return;
+    }
+
+    context.FindExistingNode( XN_NODE_TYPE_DEPTH, depthGenerator );
+    context.FindExistingNode( XN_NODE_TYPE_IMAGE, imageGenerator );
+
+    if( !readCamerasParams() )
+    {
+        std::cerr << "CvCapture_OpenNI::CvCapture_OpenNI : Could not read cameras parameters" << std::endl;
+        return;
+    }
+
+    outputMaps.resize( outputMapsTypesCount );
+
+    isContextOpened = true;
 }
 
 CvCapture_OpenNI::~CvCapture_OpenNI()
 {
     context.StopGeneratingAll();
-    context.Shutdown();
+    context.Release();
 }
 
 bool CvCapture_OpenNI::readCamerasParams()
@@ -347,7 +774,7 @@ double CvCapture_OpenNI::getProperty( int propIdx )
         }
         else
         {
-            CV_Error( CV_StsError, "Unsupported generator prefix!" );
+            propValue = getCommonProperty( purePropIdx );
         }
     }
 
@@ -356,75 +783,198 @@ double CvCapture_OpenNI::getProperty( int propIdx )
 
 bool CvCapture_OpenNI::setProperty( int propIdx, double propValue )
 {
-    bool res = false;
+    bool isSet = false;
     if( isOpened() )
     {
         int purePropIdx = propIdx & ~CV_CAP_OPENNI_GENERATORS_MASK;
 
         if( (propIdx & CV_CAP_OPENNI_GENERATORS_MASK) == CV_CAP_OPENNI_IMAGE_GENERATOR )
         {
-            res = setImageGeneratorProperty( purePropIdx, propValue );
+            isSet = setImageGeneratorProperty( purePropIdx, propValue );
         }
         else if( (propIdx & CV_CAP_OPENNI_GENERATORS_MASK) == CV_CAP_OPENNI_DEPTH_GENERATOR )
         {
-            res = setDepthGeneratorProperty( purePropIdx, propValue );
+            isSet = setDepthGeneratorProperty( purePropIdx, propValue );
         }
         else
         {
-            CV_Error( CV_StsError, "Unsupported generator prefix!" );
+            isSet = setCommonProperty( purePropIdx, propValue );
         }
     }
 
-    return res;
+    return isSet;
+}
+
+double CvCapture_OpenNI::getCommonProperty( int propIdx )
+{
+    double propValue = 0;
+
+    switch( propIdx )
+    {
+    // There is a set of properties that correspond to depth generator by default
+    // (is they are pass without particular generator flag). Two reasons of this:
+    // 1) We can assume that depth generator is the main one for depth sensor.
+    // 2) In the initial vertions of OpenNI integration to OpenCV the value of
+    //    flag CV_CAP_OPENNI_DEPTH_GENERATOR was 0 (it isn't zero now).
+    case CV_CAP_PROP_OPENNI_GENERATOR_PRESENT :
+    case CV_CAP_PROP_FRAME_WIDTH :
+    case CV_CAP_PROP_FRAME_HEIGHT :
+    case CV_CAP_PROP_FPS :
+    case CV_CAP_PROP_OPENNI_FRAME_MAX_DEPTH :
+    case CV_CAP_PROP_OPENNI_BASELINE :
+    case CV_CAP_PROP_OPENNI_FOCAL_LENGTH :
+    case CV_CAP_PROP_OPENNI_REGISTRATION :
+        propValue = getDepthGeneratorProperty( propIdx );
+        break;
+    case CV_CAP_PROP_OPENNI_APPROX_FRAME_SYNC :
+        propValue = !approxSyncGrabber.empty() && approxSyncGrabber->isRun() ? 1. : 0.;
+        break;
+    case CV_CAP_PROP_OPENNI_MAX_BUFFER_SIZE :
+        propValue = maxBufferSize;
+        break;
+    case CV_CAP_PROP_OPENNI_CIRCLE_BUFFER :
+        propValue = isCircleBuffer ? 1. : 0.;
+        break;
+    case CV_CAP_PROP_OPENNI_MAX_TIME_DURATION :
+        propValue = maxTimeDuration;
+        break;
+    default :
+    {
+        std::stringstream ss;
+        ss << "Such parameter (propIdx=" << propIdx << ") isn't supported for getting.\n";
+        CV_Error( CV_StsBadArg, ss.str().c_str() );
+    }
+    }
+
+    return propValue;
+}
+
+bool CvCapture_OpenNI::setCommonProperty( int propIdx, double propValue )
+{
+    bool isSet = false;
+
+    switch( propIdx )
+    {
+    // There is a set of properties that correspond to depth generator by default
+    // (is they are pass without particular generator flag).
+    case CV_CAP_PROP_OPENNI_REGISTRATION:
+        isSet = setDepthGeneratorProperty( propIdx, propValue );
+        break;
+    case CV_CAP_PROP_OPENNI_APPROX_FRAME_SYNC :
+        if( propValue && depthGenerator.IsValid() && imageGenerator.IsValid() )
+        {
+            // start synchronization
+            if( approxSyncGrabber.empty() )
+            {
+                approxSyncGrabber = new ApproximateSyncGrabber( context, depthGenerator, imageGenerator, maxBufferSize, isCircleBuffer, maxTimeDuration );
+            }
+            else
+            {
+                approxSyncGrabber->finish();
+
+                // update params
+                approxSyncGrabber->setMaxBufferSize(maxBufferSize);
+                approxSyncGrabber->setIsCircleBuffer(isCircleBuffer);
+                approxSyncGrabber->setMaxTimeDuration(maxTimeDuration);
+            }
+            approxSyncGrabber->start();
+        }
+        else if( !propValue && !approxSyncGrabber.empty() )
+        {
+            // finish synchronization
+            approxSyncGrabber->finish();
+        }
+        break;
+    case CV_CAP_PROP_OPENNI_MAX_BUFFER_SIZE :
+        maxBufferSize = cvRound(propValue);
+        if( !approxSyncGrabber.empty() )
+            approxSyncGrabber->setMaxBufferSize(maxBufferSize);
+        break;
+    case CV_CAP_PROP_OPENNI_CIRCLE_BUFFER :
+        if( !approxSyncGrabber.empty() )
+            approxSyncGrabber->setIsCircleBuffer(isCircleBuffer);
+        break;
+    case CV_CAP_PROP_OPENNI_MAX_TIME_DURATION :
+        maxTimeDuration = cvRound(propValue);
+        if( !approxSyncGrabber.empty() )
+            approxSyncGrabber->setMaxTimeDuration(maxTimeDuration);
+        break;
+    default:
+    {
+        std::stringstream ss;
+        ss << "Such parameter (propIdx=" << propIdx << ") isn't supported for setting.\n";
+        CV_Error( CV_StsBadArg, ss.str().c_str() );
+    }
+    }
+
+    return isSet;
 }
 
 double CvCapture_OpenNI::getDepthGeneratorProperty( int propIdx )
 {
-    CV_Assert( depthGenerator.IsValid() );
+    double propValue = 0;
+    if( !depthGenerator.IsValid() )
+        return propValue;
 
-    double res = 0;
+    XnMapOutputMode mode;
+
     switch( propIdx )
     {
+    case CV_CAP_PROP_OPENNI_GENERATOR_PRESENT :
+        CV_DbgAssert( depthGenerator.IsValid() );
+        propValue = 1.;
+        break;
     case CV_CAP_PROP_FRAME_WIDTH :
-        res = depthOutputMode.nXRes;
+        if( depthGenerator.GetMapOutputMode(mode) == XN_STATUS_OK )
+            propValue = mode.nXRes;
         break;
     case CV_CAP_PROP_FRAME_HEIGHT :
-        res = depthOutputMode.nYRes;
+        if( depthGenerator.GetMapOutputMode(mode) == XN_STATUS_OK )
+            propValue = mode.nYRes;
         break;
     case CV_CAP_PROP_FPS :
-        res = depthOutputMode.nFPS;
+        if( depthGenerator.GetMapOutputMode(mode) == XN_STATUS_OK )
+            propValue = mode.nFPS;
         break;
     case CV_CAP_PROP_OPENNI_FRAME_MAX_DEPTH :
-        res = depthGenerator.GetDeviceMaxDepth();
+        propValue = depthGenerator.GetDeviceMaxDepth();
         break;
     case CV_CAP_PROP_OPENNI_BASELINE :
-        res = baseline;
+        propValue = baseline;
         break;
     case CV_CAP_PROP_OPENNI_FOCAL_LENGTH :
-        res = depthFocalLength_VGA;
+        propValue = (double)depthFocalLength_VGA;
         break;
     case CV_CAP_PROP_OPENNI_REGISTRATION :
-        res = depthGenerator.GetAlternativeViewPointCap().IsViewPointAs(imageGenerator) ? 1.0 : 0.0;
+        propValue = depthGenerator.GetAlternativeViewPointCap().IsViewPointAs(imageGenerator) ? 1.0 : 0.0;
+        break;
     default :
-        CV_Error( CV_StsBadArg, "Depth generator does not support such parameter for getting.\n");
+    {
+        std::stringstream ss;
+        ss << "Depth generator does not support such parameter (propIdx=" << propIdx << ") for getting.\n";
+        CV_Error( CV_StsBadArg, ss.str().c_str() );
+    }
     }
 
-    return res;
+    return propValue;
 }
 
 bool CvCapture_OpenNI::setDepthGeneratorProperty( int propIdx, double propValue )
 {
-    bool res = false;
+    bool isSet = false;
 
     CV_Assert( depthGenerator.IsValid() );
 
     switch( propIdx )
     {
-        case CV_CAP_PROP_OPENNI_REGISTRATION:
+    case CV_CAP_PROP_OPENNI_REGISTRATION:
+        {
+            if( propValue != 0.0 ) // "on"
             {
-                if( propValue != 0.0 ) // "on"
+                // if there isn't image generator (i.e. ASUS XtionPro doesn't have it)
+                // then the property isn't avaliable
+                if( imageGenerator.IsValid() )
                 {
-                    CV_Assert( imageGenerator.IsValid() );
                     if( !depthGenerator.GetAlternativeViewPointCap().IsViewPointAs(imageGenerator) )
                     {
                         if( depthGenerator.GetAlternativeViewPointCap().IsViewPointSupported(imageGenerator) )
@@ -433,97 +983,121 @@ bool CvCapture_OpenNI::setDepthGeneratorProperty( int propIdx, double propValue 
                             if( status != XN_STATUS_OK )
                                 std::cerr << "CvCapture_OpenNI::setDepthGeneratorProperty : " << xnGetStatusString(status) << std::endl;
                             else
-                                res = true;
+                                isSet = true;
                         }
                         else
-                           std::cerr << "CvCapture_OpenNI::setDepthGeneratorProperty : Unsupported viewpoint." << std::endl;
+                            std::cerr << "CvCapture_OpenNI::setDepthGeneratorProperty : Unsupported viewpoint." << std::endl;
                     }
                     else
-                        res = true;
-                }
-                else // "off"
-                {
-                    XnStatus status = depthGenerator.GetAlternativeViewPointCap().ResetViewPoint();
-                    if( status != XN_STATUS_OK )
-                        std::cerr << "CvCapture_OpenNI::setDepthGeneratorProperty : " << xnGetStatusString(status) << std::endl;
-                    else
-                        res = true;
+                        isSet = true;
                 }
             }
-            break;
-        default:
-            CV_Error( CV_StsBadArg, "Unsupported depth generator property.\n");
+            else // "off"
+            {
+                XnStatus status = depthGenerator.GetAlternativeViewPointCap().ResetViewPoint();
+                if( status != XN_STATUS_OK )
+                    std::cerr << "CvCapture_OpenNI::setDepthGeneratorProperty : " << xnGetStatusString(status) << std::endl;
+                else
+                    isSet = true;
+            }
+        }
+        break;
+    default:
+    {
+        std::stringstream ss;
+        ss << "Depth generator does not support such parameter (propIdx=" << propIdx << ") for setting.\n";
+        CV_Error( CV_StsBadArg, ss.str().c_str() );
+    }
     }
 
-    return res;
+    return isSet;
 }
 
 double CvCapture_OpenNI::getImageGeneratorProperty( int propIdx )
 {
-    CV_Assert( imageGenerator.IsValid() );
+    double propValue = 0.;
+    if( !imageGenerator.IsValid() )
+        return propValue;
 
-    double res = 0;
+    XnMapOutputMode mode;
     switch( propIdx )
     {
+    case CV_CAP_PROP_OPENNI_GENERATOR_PRESENT :
+        CV_DbgAssert( imageGenerator.IsValid() );
+        propValue = 1.;
+        break;
     case CV_CAP_PROP_FRAME_WIDTH :
-        res = imageOutputMode.nXRes;
+        if( imageGenerator.GetMapOutputMode(mode) == XN_STATUS_OK )
+            propValue = mode.nXRes;
         break;
     case CV_CAP_PROP_FRAME_HEIGHT :
-        res = imageOutputMode.nYRes;
+        if( imageGenerator.GetMapOutputMode(mode) == XN_STATUS_OK )
+            propValue = mode.nYRes;
         break;
     case CV_CAP_PROP_FPS :
-        res = imageOutputMode.nFPS;
+        if( imageGenerator.GetMapOutputMode(mode) == XN_STATUS_OK )
+            propValue = mode.nFPS;
         break;
     default :
-        CV_Error( CV_StsBadArg, "Image generator does not support such parameter for getting.\n");
+    {
+        std::stringstream ss;
+        ss << "Image generator does not support such parameter (propIdx=" << propIdx << ") for getting.\n";
+        CV_Error( CV_StsBadArg, ss.str().c_str() );
+    }
     }
 
-    return res;
+    return propValue;
 }
 
 bool CvCapture_OpenNI::setImageGeneratorProperty( int propIdx, double propValue )
 {
-    bool res = false;
-
-    CV_Assert( imageGenerator.IsValid() );
+    bool isSet = false;
+    if( !imageGenerator.IsValid() )
+        return isSet;
 
     switch( propIdx )
     {
     case CV_CAP_PROP_OPENNI_OUTPUT_MODE :
     {
-        XnMapOutputMode newImageOutputMode = imageOutputMode;
+        XnMapOutputMode mode;
 
         switch( cvRound(propValue) )
         {
         case CV_CAP_OPENNI_VGA_30HZ :
-            newImageOutputMode.nXRes = XN_VGA_X_RES;
-            newImageOutputMode.nYRes = XN_VGA_Y_RES;
-            newImageOutputMode.nFPS = 30;
+            mode.nXRes = XN_VGA_X_RES;
+            mode.nYRes = XN_VGA_Y_RES;
+            mode.nFPS = 30;
             break;
         case CV_CAP_OPENNI_SXGA_15HZ :
-            newImageOutputMode.nXRes = XN_SXGA_X_RES;
-            newImageOutputMode.nYRes = XN_SXGA_Y_RES;
-            newImageOutputMode.nFPS = 15;
+            mode.nXRes = XN_SXGA_X_RES;
+            mode.nYRes = XN_SXGA_Y_RES;
+            mode.nFPS = 15;
+            break;
+        case CV_CAP_OPENNI_SXGA_30HZ :
+            mode.nXRes = XN_SXGA_X_RES;
+            mode.nYRes = XN_SXGA_Y_RES;
+            mode.nFPS = 30;
             break;
         default :
             CV_Error( CV_StsBadArg, "Unsupported image generator output mode.\n");
         }
 
-        XnStatus status = imageGenerator.SetMapOutputMode( newImageOutputMode );
+        XnStatus status = imageGenerator.SetMapOutputMode( mode );
         if( status != XN_STATUS_OK )
             std::cerr << "CvCapture_OpenNI::setImageGeneratorProperty : " << xnGetStatusString(status) << std::endl;
         else
-        {
-            imageOutputMode = newImageOutputMode;
-            res = true;
-        }
+            isSet = true;
         break;
     }
     default:
-        CV_Error( CV_StsBadArg, "Unsupported image generator property.\n");
+    {
+        std::stringstream ss;
+        ss << "Image generator does not support such parameter (propIdx=" << propIdx << ") for setting.\n";
+        CV_Error( CV_StsBadArg, ss.str().c_str() );
+    }
     }
 
-    return res;
+    return isSet;
 }
 
 bool CvCapture_OpenNI::grabFrame()
@@ -531,13 +1105,25 @@ bool CvCapture_OpenNI::grabFrame()
     if( !isOpened() )
         return false;
 
-    XnStatus status = context.WaitAndUpdateAll();
-    if( status != XN_STATUS_OK )
-        return false;
+    bool isGrabbed = false;
+    if( !approxSyncGrabber.empty() && approxSyncGrabber->isRun() )
+    {
+        isGrabbed = approxSyncGrabber->grab( depthMetaData, imageMetaData );
+    }
+    else
+    {
+        XnStatus status = context.WaitAndUpdateAll();
+        if( status != XN_STATUS_OK )
+            return false;
 
-    depthGenerator.GetMetaData( depthMetaData );
-    imageGenerator.GetMetaData( imageMetaData );
-    return true;
+        if( depthGenerator.IsValid() )
+            depthGenerator.GetMetaData( depthMetaData );
+        if( imageGenerator.IsValid() )
+            imageGenerator.GetMetaData( imageMetaData );
+        isGrabbed = true;
+    }
+
+    return isGrabbed;
 }
 
 inline void getDepthMapFromMetaData( const xn::DepthMetaData& depthMetaData, cv::Mat& depthMap, XnUInt64 noSampleValue, XnUInt64 shadowValue )
@@ -552,7 +1138,7 @@ inline void getDepthMapFromMetaData( const xn::DepthMetaData& depthMetaData, cv:
     // CV_Assert( sizeof(unsigned short) == sizeof(XnDepthPixel) );
     memcpy( depthMap.data, pDepthMap, cols*rows*sizeof(XnDepthPixel) );
 
-    cv::Mat badMask = (depthMap == noSampleValue) | (depthMap == shadowValue) | (depthMap == 0);
+    cv::Mat badMask = (depthMap == (double)noSampleValue) | (depthMap == (double)shadowValue) | (depthMap == 0);
 
     // mask the pixels with invalid depth
     depthMap.setTo( cv::Scalar::all( CvCapture_OpenNI::INVALID_PIXEL_VAL ), badMask );
@@ -560,7 +1146,7 @@ inline void getDepthMapFromMetaData( const xn::DepthMetaData& depthMetaData, cv:
 
 IplImage* CvCapture_OpenNI::retrieveDepthMap()
 {
-    if( depthMetaData.XRes() <= 0 || depthMetaData.YRes() <= 0 )
+    if( !depthMetaData.Data() )
         return 0;
 
     getDepthMapFromMetaData( depthMetaData, outputMaps[CV_CAP_OPENNI_DEPTH_MAP].mat, noSampleValue, shadowValue );
@@ -570,8 +1156,7 @@ IplImage* CvCapture_OpenNI::retrieveDepthMap()
 
 IplImage* CvCapture_OpenNI::retrievePointCloudMap()
 {
-    int cols = depthMetaData.XRes(), rows = depthMetaData.YRes();
-    if( cols <= 0 || rows <= 0 )
+    if( !depthMetaData.Data() )
         return 0;
 
     cv::Mat depth;
@@ -579,6 +1164,7 @@ IplImage* CvCapture_OpenNI::retrievePointCloudMap()
 
     const int badPoint = INVALID_PIXEL_VAL;
     const float badCoord = INVALID_COORDINATE_VAL;
+    int cols = depthMetaData.XRes(), rows = depthMetaData.YRes();
     cv::Mat pointCloud_XYZ( rows, cols, CV_32FC3, cv::Scalar::all(badPoint) );
 
     cv::Ptr<XnPoint3D> proj = new XnPoint3D[cols*rows];
@@ -588,8 +1174,8 @@ IplImage* CvCapture_OpenNI::retrievePointCloudMap()
         for( int x = 0; x < cols; x++ )
         {
             int ind = y*cols+x;
-            proj[ind].X = x;
-            proj[ind].Y = y;
+            proj[ind].X = (float)x;
+            proj[ind].Y = (float)y;
             proj[ind].Z = depth.at<unsigned short>(y, x);
         }
     }
@@ -625,7 +1211,7 @@ void computeDisparity_32F( const xn::DepthMetaData& depthMetaData, cv::Mat& disp
 
     // disparity = baseline * F / z;
 
-    float mult = baseline /*mm*/ * F /*pixels*/;
+    float mult = (float)(baseline /*mm*/ * F /*pixels*/);
 
     disp.create( depth.size(), CV_32FC1);
     disp = cv::Scalar::all( CvCapture_OpenNI::INVALID_PIXEL_VAL );
@@ -642,7 +1228,7 @@ void computeDisparity_32F( const xn::DepthMetaData& depthMetaData, cv::Mat& disp
 
 IplImage* CvCapture_OpenNI::retrieveDisparityMap()
 {
-    if( depthMetaData.XRes() <= 0 || depthMetaData.YRes() <= 0 )
+    if( !depthMetaData.Data() )
         return 0;
 
     cv::Mat disp32;
@@ -655,7 +1241,7 @@ IplImage* CvCapture_OpenNI::retrieveDisparityMap()
 
 IplImage* CvCapture_OpenNI::retrieveDisparityMap_32F()
 {
-    if( depthMetaData.XRes() <= 0 || depthMetaData.YRes() <= 0 )
+    if( !depthMetaData.Data() )
         return 0;
 
     computeDisparity_32F( depthMetaData, outputMaps[CV_CAP_OPENNI_DISPARITY_MAP_32F].mat, baseline, depthFocalLength_VGA, noSampleValue, shadowValue );
@@ -665,7 +1251,7 @@ IplImage* CvCapture_OpenNI::retrieveDisparityMap_32F()
 
 IplImage* CvCapture_OpenNI::retrieveValidDepthMask()
 {
-    if( depthMetaData.XRes() <= 0 || depthMetaData.YRes() <= 0 )
+    if( !depthMetaData.Data() )
         return 0;
 
     cv::Mat depth;
@@ -678,21 +1264,20 @@ IplImage* CvCapture_OpenNI::retrieveValidDepthMask()
 
 inline void getBGRImageFromMetaData( const xn::ImageMetaData& imageMetaData, cv::Mat& bgrImage )
 {
-    int cols = imageMetaData.XRes();
-    int rows = imageMetaData.YRes();
+    if( imageMetaData.PixelFormat() != XN_PIXEL_FORMAT_RGB24 )
+        CV_Error( CV_StsUnsupportedFormat, "Unsupported format of grabbed image\n" );
 
-    cv::Mat rgbImage( rows, cols, CV_8UC3 );
-
+    cv::Mat rgbImage( imageMetaData.YRes(), imageMetaData.XRes(), CV_8UC3 );
     const XnRGB24Pixel* pRgbImage = imageMetaData.RGB24Data();
 
     // CV_Assert( 3*sizeof(uchar) == sizeof(XnRGB24Pixel) );
-    memcpy( rgbImage.data, pRgbImage, cols*rows*sizeof(XnRGB24Pixel) );
+    memcpy( rgbImage.data, pRgbImage, rgbImage.total()*sizeof(XnRGB24Pixel) );
     cv::cvtColor( rgbImage, bgrImage, CV_RGB2BGR );
 }
 
 IplImage* CvCapture_OpenNI::retrieveBGRImage()
 {
-    if( imageMetaData.XRes() <= 0 || imageMetaData.YRes() <= 0 )
+    if( !imageMetaData.Data() )
         return 0;
 
     getBGRImageFromMetaData( imageMetaData, outputMaps[CV_CAP_OPENNI_BGR_IMAGE].mat );
@@ -702,7 +1287,7 @@ IplImage* CvCapture_OpenNI::retrieveBGRImage()
 
 IplImage* CvCapture_OpenNI::retrieveGrayImage()
 {
-    if( imageMetaData.XRes() <= 0 || imageMetaData.YRes() <= 0 )
+    if( !imageMetaData.Data() )
         return 0;
 
     CV_Assert( imageMetaData.BytesPerPixel() == 3 ); // RGB
@@ -717,7 +1302,7 @@ IplImage* CvCapture_OpenNI::retrieveGrayImage()
 IplImage* CvCapture_OpenNI::retrieveFrame( int outputType )
 {
     IplImage* image = 0;
-    CV_Assert( outputType < outputTypesCount && outputType >= 0);
+    CV_Assert( outputType < outputMapsTypesCount && outputType >= 0);
 
     if( outputType == CV_CAP_OPENNI_DEPTH_MAP )
     {
@@ -755,6 +1340,17 @@ IplImage* CvCapture_OpenNI::retrieveFrame( int outputType )
 CvCapture* cvCreateCameraCapture_OpenNI( int index )
 {
     CvCapture_OpenNI* capture = new CvCapture_OpenNI( index );
+
+    if( capture->isOpened() )
+        return capture;
+
+    delete capture;
+    return 0;
+}
+
+CvCapture* cvCreateFileCapture_OpenNI( const char* filename )
+{
+    CvCapture_OpenNI* capture = new CvCapture_OpenNI( filename );
 
     if( capture->isOpened() )
         return capture;

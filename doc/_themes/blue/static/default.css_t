@@ -16,6 +16,10 @@ body {
     padding: 0;
 }
 
+img.logo {
+    width: 150px;
+}
+
 div.document {
     background-color: {{ theme_sidebarbgcolor }};
 }
@@ -26,7 +30,7 @@ div.documentwrapper {
 }
 
 div.bodywrapper {
-    margin: 0 0 0 230px;
+    margin: 0 0 0 270px;
 }
 
 div.body {
@@ -81,6 +85,7 @@ div.related a {
 
 div.sphinxsidebar {
     word-wrap: break-word;
+    width: 270px;
     {%- if theme_stickysidebar|tobool %}
     top: 30px;
     margin: 0;
@@ -284,10 +289,16 @@ dl.function > dt:first-child {
     margin-bottom: 7px;
 }
 
-dl.c\:function > dt:first-child {
+dl.cfunction > dt:first-child {
     margin-bottom: 7px;
     color: #8080B0;
 }
+
+dl.cfunction > dt:first-child tt.descname
+{
+    color: #8080B0;
+}
+
 
 dl.pyfunction > dt:first-child {
     margin-bottom: 7px;
@@ -295,6 +306,16 @@ dl.pyfunction > dt:first-child {
 
 dl.pyoldfunction > dt:first-child {
     margin-bottom: 7px;
+    color: #8080B0;
+}
+
+dl.pyoldfunction > dt:first-child tt.descname
+{
+    color: #8080B0;
+}
+
+dl.pyoldfunction > dt:first-child tt.descclassname
+{
     color: #8080B0;
 }
 

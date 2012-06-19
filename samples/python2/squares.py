@@ -3,7 +3,7 @@ import cv2
 
 
 def angle_cos(p0, p1, p2):
-    d1, d2 = p0-p1, p2-p1
+    d1, d2 = (p0-p1).astype('float'), (p2-p1).astype('float')
     return abs( np.dot(d1, d2) / np.sqrt( np.dot(d1, d1)*np.dot(d2, d2) ) )
 
 def find_squares(img):
@@ -34,6 +34,7 @@ if __name__ == '__main__':
         squares = find_squares(img)
         cv2.drawContours( img, squares, -1, (0, 255, 0), 3 )
         cv2.imshow('squares', img)
-        ch = cv2.waitKey()
+        ch = 0xFF & cv2.waitKey()
         if ch == 27:
             break
+    cv2.destroyAllWindows() 			

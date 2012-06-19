@@ -34,7 +34,7 @@ Class for loading the data from a ``.csv`` file.
         void mix_train_and_test_idx();
         
         const CvMat* get_var_idx();
-        void chahge_var_idx( int vi, bool state );
+        void change_var_idx( int vi, bool state );
 
         const CvMat* get_var_types();
         void set_var_types( const char* str );
@@ -62,9 +62,9 @@ Reads the data set from a ``.csv``-like ``filename`` file and stores all read va
 
     :param filename: The input file name
 
-While reading the data, the method tries to define the type of variables (predictors and responses): ordered or categorical. If a value of the variable is not numerical (except for the label for a missing value), the type of the variable is set to ``CV_VAR_CATEGORICAL``. If all existing values of the variable are numerical, the type of the variable is set to ``CV_VAR_ORDERED``. So, the default definition of variables types works correctly for all cases except the case of a categorical variable with numerical class labeles. In this case, the type ``CV_VAR_ORDERED`` is set. You should change the type to ``CV_VAR_CATEGORICAL`` using the method :ocv:func:`CvMLData::change_var_type`. For categorical variables, a common map is built to convert a string class label to the numerical class label. Use :ocv:func:`CvMLData::get_class_labels_map` to obtain this map. 
+While reading the data, the method tries to define the type of variables (predictors and responses): ordered or categorical. If a value of the variable is not numerical (except for the label for a missing value), the type of the variable is set to ``CV_VAR_CATEGORICAL``. If all existing values of the variable are numerical, the type of the variable is set to ``CV_VAR_ORDERED``. So, the default definition of variables types works correctly for all cases except the case of a categorical variable with numerical class labels. In this case, the type ``CV_VAR_ORDERED`` is set. You should change the type to ``CV_VAR_CATEGORICAL`` using the method :ocv:func:`CvMLData::change_var_type`. For categorical variables, a common map is built to convert a string class label to the numerical class label. Use :ocv:func:`CvMLData::get_class_labels_map` to obtain this map. 
 
-Also, when reading the data, the method constructs the mask of missing values. For example, values are egual to `'?'`.
+Also, when reading the data, the method constructs the mask of missing values. For example, values are equal to `'?'`.
 
 CvMLData::get_values
 --------------------
@@ -158,11 +158,11 @@ The method returns the indices of variables (columns) used in the ``values`` mat
 
 It returns ``0`` if the used subset is not set. It throws an exception if the data has not been loaded from the file yet. Returned matrix is a single-row matrix of the type ``CV_32SC1``. Its column count is equal to the size of the used variable subset.
 
-CvMLData::chahge_var_idx
+CvMLData::change_var_idx
 ------------------------
 Enables or disables particular variable in the loaded data
 
-.. ocv:function:: void CvMLData::chahge_var_idx( int vi, bool state )
+.. ocv:function:: void CvMLData::change_var_idx( int vi, bool state )
 
 By default, after reading the data set all variables in the ``values`` matrix (see :ocv:func:`CvMLData::get_values`) are used. But you may want to use only a subset of variables and include/exclude (depending on ``state`` value) a variable with the ``vi`` index from the used subset. If the data has not been loaded from the file yet, an exception is thrown.
     
@@ -237,7 +237,7 @@ The method returns a map that converts string class labels to the numerical clas
 
 CvTrainTestSplit
 ----------------
-.. ocv:class:: CvTrainTestSplit
+.. ocv:struct:: CvTrainTestSplit
 
 Structure setting the split of a data set read by :ocv:class:`CvMLData`.
 ::

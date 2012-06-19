@@ -55,53 +55,55 @@ namespace cv
 
 //////////////////////////////// Mat ////////////////////////////////
 
-inline Mat::Mat()
-    : flags(0), dims(0), rows(0), cols(0), data(0), refcount(0),
-    datastart(0), dataend(0), datalimit(0), allocator(0), size(&rows)
+inline void Mat::initEmpty()
 {
+    flags = MAGIC_VAL;
+    dims = rows = cols = 0;
+    data = datastart = dataend = datalimit = 0;
+    refcount = 0;
+    allocator = 0;
+}
+    
+inline Mat::Mat() : size(&rows)
+{
+    initEmpty();
 }
 
-inline Mat::Mat(int _rows, int _cols, int _type)
-    : flags(0), dims(0), rows(0), cols(0), data(0), refcount(0),
-    datastart(0), dataend(0), datalimit(0), allocator(0), size(&rows)
+inline Mat::Mat(int _rows, int _cols, int _type) : size(&rows)
 {
+    initEmpty();
     create(_rows, _cols, _type);
 }
 
-inline Mat::Mat(int _rows, int _cols, int _type, const Scalar& _s)
-    : flags(0), dims(0), rows(0), cols(0), data(0), refcount(0),
-    datastart(0), dataend(0), datalimit(0), allocator(0), size(&rows)
+inline Mat::Mat(int _rows, int _cols, int _type, const Scalar& _s) : size(&rows)
 {
+    initEmpty();
     create(_rows, _cols, _type);
     *this = _s;
 }
 
-inline Mat::Mat(Size _sz, int _type)
-    : flags(0), dims(0), rows(0), cols(0), data(0), refcount(0),
-    datastart(0), dataend(0), datalimit(0), allocator(0), size(&rows)
+inline Mat::Mat(Size _sz, int _type) : size(&rows)
 {
+    initEmpty();
     create( _sz.height, _sz.width, _type );
 }
     
-inline Mat::Mat(Size _sz, int _type, const Scalar& _s)
-    : flags(0), dims(0), rows(0), cols(0), data(0), refcount(0),
-    datastart(0), dataend(0), datalimit(0), allocator(0), size(&rows)
+inline Mat::Mat(Size _sz, int _type, const Scalar& _s) : size(&rows)
 {
+    initEmpty();
     create(_sz.height, _sz.width, _type);
     *this = _s;
 }
     
-inline Mat::Mat(int _dims, const int* _sz, int _type)
-    : flags(0), dims(0), rows(0), cols(0), data(0), refcount(0),
-    datastart(0), dataend(0), datalimit(0), allocator(0), size(&rows)
+inline Mat::Mat(int _dims, const int* _sz, int _type) : size(&rows)
 {
+    initEmpty();
     create(_dims, _sz, _type);
 }
 
-inline Mat::Mat(int _dims, const int* _sz, int _type, const Scalar& _s)
-    : flags(0), dims(0), rows(0), cols(0), data(0), refcount(0),
-    datastart(0), dataend(0), datalimit(0), allocator(0), size(&rows)
+inline Mat::Mat(int _dims, const int* _sz, int _type, const Scalar& _s) : size(&rows)
 {
+    initEmpty();
     create(_dims, _sz, _type);
     *this = _s;
 }    
@@ -168,27 +170,6 @@ inline Mat::Mat(Size _sz, int _type, void* _data, size_t _step)
     dataend = datalimit - _step + minstep;
 }
 
-
-inline Mat::Mat(const CvMat* m, bool copyData)
-    : flags(MAGIC_VAL + (m->type & (CV_MAT_TYPE_MASK|CV_MAT_CONT_FLAG))),
-    dims(2), rows(m->rows), cols(m->cols), data(m->data.ptr), refcount(0),
-    datastart(m->data.ptr), allocator(0), size(&rows)
-{
-    if( !copyData )
-    {
-        size_t esz = CV_ELEM_SIZE(m->type), minstep = cols*esz, _step = m->step;
-        if( _step == 0 )
-            _step = minstep;
-        datalimit = datastart + _step*rows;
-        dataend = datalimit - _step + minstep;
-        step[0] = _step; step[1] = esz;
-    }
-    else
-    {
-        data = datastart = dataend = 0;
-        Mat(m->rows, m->cols, m->type, m->data.ptr, m->step).copyTo(*this);
-    }
-}
 
 template<typename _Tp> inline Mat::Mat(const vector<_Tp>& vec, bool copyData)
     : flags(MAGIC_VAL | DataType<_Tp>::type | CV_MAT_CONT_FLAG),
@@ -338,9 +319,13 @@ inline Mat Mat::colRange(const Range& r) const
 
 inline Mat Mat::diag(const Mat& d)
 {
-    CV_Assert( d.cols == 1 );
-    Mat m(d.rows, d.rows, d.type(), Scalar(0)), md = m.diag();
-    d.copyTo(md);
+    CV_Assert( d.cols == 1 || d.rows == 1 );
+    int len = d.rows + d.cols - 1;
+    Mat m(len, len, d.type(), Scalar(0)), md = m.diag();
+    if( d.cols == 1 )
+        d.copyTo(md);
+    else
+        transpose(d, md);
     return m;
 }
 
@@ -579,18 +564,28 @@ template<typename _Tp> inline const _Tp& Mat::at(Point pt) const
 
 template<typename _Tp> inline _Tp& Mat::at(int i0)
 {
-    CV_DbgAssert( dims <= 2 && data && (size.p[0] == 1 || size.p[1] == 1) &&
-                 (unsigned)i0 < (unsigned)(size.p[0] + size.p[1] - 1) &&
+    CV_DbgAssert( dims <= 2 && data &&
+                 (unsigned)i0 < (unsigned)(size.p[0]*size.p[1]) &&
                  elemSize() == CV_ELEM_SIZE(DataType<_Tp>::type) );
-    return *(_Tp*)(data + step.p[size.p[0]==1]*i0);
+    if( isContinuous() || size.p[0] == 1 )
+        return ((_Tp*)data)[i0];
+    if( size.p[1] == 1 )
+        return *(_Tp*)(data + step.p[0]*i0);
+    int i = i0/cols, j = i0 - i*cols;
+    return ((_Tp*)(data + step.p[0]*i))[j];
 }
     
 template<typename _Tp> inline const _Tp& Mat::at(int i0) const
 {
-    CV_DbgAssert( dims <= 2 && data && (size.p[0] == 1 || size.p[1] == 1) &&
-                 (unsigned)i0 < (unsigned)(size.p[0] + size.p[1] - 1) &&
+    CV_DbgAssert( dims <= 2 && data &&
+                 (unsigned)i0 < (unsigned)(size.p[0]*size.p[1]) &&
                  elemSize() == CV_ELEM_SIZE(DataType<_Tp>::type) );
-    return *(_Tp*)(data + step.p[size.p[0]==1]*i0);
+    if( isContinuous() || size.p[0] == 1 )
+        return ((const _Tp*)data)[i0];
+    if( size.p[1] == 1 )
+        return *(const _Tp*)(data + step.p[0]*i0);
+    int i = i0/cols, j = i0 - i*cols;
+    return ((const _Tp*)(data + step.p[0]*i))[j];
 }
     
 template<typename _Tp> inline _Tp& Mat::at(int i0, int i1, int i2)
@@ -612,6 +607,16 @@ template<typename _Tp> inline const _Tp& Mat::at(const int* idx) const
 {
     CV_DbgAssert( elemSize() == CV_ELEM_SIZE(DataType<_Tp>::type) );
     return *(const _Tp*)ptr(idx);
+}
+template<typename _Tp, int n> _Tp& Mat::at(const Vec<int, n>& idx)
+{
+    CV_DbgAssert( elemSize() == CV_ELEM_SIZE(DataType<_Tp>::type) );
+    return *(_Tp*)ptr(idx.val);
+}
+template<typename _Tp, int n> inline const _Tp& Mat::at(const Vec<int, n>& idx) const
+{
+    CV_DbgAssert( elemSize() == CV_ELEM_SIZE(DataType<_Tp>::type) );
+    return *(const _Tp*)ptr(idx.val);
 }
     
     
@@ -959,9 +964,6 @@ template<typename _Tp> inline int Mat_<_Tp>::channels() const
 template<typename _Tp> inline size_t Mat_<_Tp>::stepT(int i) const { return step.p[i]/elemSize(); }
 template<typename _Tp> inline size_t Mat_<_Tp>::step1(int i) const { return step.p[i]/elemSize1(); }
 
-template<typename _Tp> inline Mat_<_Tp> Mat_<_Tp>::reshape(int _rows) const
-{ return Mat_<_Tp>(Mat::reshape(0,_rows)); }
-
 template<typename _Tp> inline Mat_<_Tp>& Mat_<_Tp>::adjustROI( int dtop, int dbottom, int dleft, int dright )
 { return (Mat_<_Tp>&)(Mat::adjustROI(dtop, dbottom, dleft, dright));  }
 
@@ -1025,6 +1027,16 @@ template<typename _Tp> inline const _Tp& Mat_<_Tp>::operator ()(const int* idx) 
     return Mat::at<_Tp>(idx);
 }
 
+template<typename _Tp> template<int n> inline _Tp& Mat_<_Tp>::operator ()(const Vec<int, n>& idx)
+{
+    return Mat::at<_Tp>(idx);
+}
+
+template<typename _Tp> template<int n> inline const _Tp& Mat_<_Tp>::operator ()(const Vec<int, n>& idx) const
+{
+    return Mat::at<_Tp>(idx);
+}    
+    
 template<typename _Tp> inline _Tp& Mat_<_Tp>::operator ()(int i0)
 {
     return this->at<_Tp>(i0);
@@ -1069,7 +1081,6 @@ template<typename T1, typename T2, typename Op> inline void
 process( const Mat_<T1>& m1, Mat_<T2>& m2, Op op )
 {
     int y, x, rows = m1.rows, cols = m1.cols;
-    int c1 = m1.channels(), c2 = m2.channels();
 
     CV_DbgAssert( m1.size() == m2.size() );
 
@@ -1105,20 +1116,52 @@ process( const Mat_<T1>& m1, const Mat_<T2>& m2, Mat_<T3>& m3, Op op )
 /////////////////////////////// Input/Output Arrays /////////////////////////////////
     
 template<typename _Tp> inline _InputArray::_InputArray(const vector<_Tp>& vec)
-    : flags(STD_VECTOR + DataType<_Tp>::type), obj((void*)&vec) {}
+    : flags(FIXED_TYPE + STD_VECTOR + DataType<_Tp>::type), obj((void*)&vec) {}
 
 template<typename _Tp> inline _InputArray::_InputArray(const vector<vector<_Tp> >& vec)
-    : flags(STD_VECTOR_VECTOR + DataType<_Tp>::type), obj((void*)&vec) {}
+    : flags(FIXED_TYPE + STD_VECTOR_VECTOR + DataType<_Tp>::type), obj((void*)&vec) {}
 
+template<typename _Tp> inline _InputArray::_InputArray(const vector<Mat_<_Tp> >& vec)
+    : flags(FIXED_TYPE + STD_VECTOR_MAT + DataType<_Tp>::type), obj((void*)&vec) {}    
+    
 template<typename _Tp, int m, int n> inline _InputArray::_InputArray(const Matx<_Tp, m, n>& mtx)
-    : flags(MATX + DataType<_Tp>::type), obj((void*)&mtx), sz(n, m) {}
+    : flags(FIXED_TYPE + FIXED_SIZE + MATX + DataType<_Tp>::type), obj((void*)&mtx), sz(n, m) {}
+    
+template<typename _Tp> inline _InputArray::_InputArray(const _Tp* vec, int n)
+    : flags(FIXED_TYPE + FIXED_SIZE + MATX + DataType<_Tp>::type), obj((void*)vec), sz(n, 1) {}
 
 inline _InputArray::_InputArray(const Scalar& s)
-    : flags(MATX + CV_64F), obj((void*)&s), sz(1, 4) {} 
+    : flags(FIXED_TYPE + FIXED_SIZE + MATX + CV_64F), obj((void*)&s), sz(1, 4) {}
+
+template<typename _Tp> inline _InputArray::_InputArray(const Mat_<_Tp>& m)
+    : flags(FIXED_TYPE + MAT + DataType<_Tp>::type), obj((void*)&m) {}
     
-template<typename _Tp> inline _OutputArray::_OutputArray(vector<_Tp>& vec) : _InputArray(vec) {}
-template<typename _Tp> inline _OutputArray::_OutputArray(vector<vector<_Tp> >& vec) : _InputArray(vec) {}
-template<typename _Tp, int m, int n> inline _OutputArray::_OutputArray(Matx<_Tp, m, n>& mtx) : _InputArray(mtx) {}
+template<typename _Tp> inline _OutputArray::_OutputArray(vector<_Tp>& vec)
+    : _InputArray(vec) {}
+template<typename _Tp> inline _OutputArray::_OutputArray(vector<vector<_Tp> >& vec)
+    : _InputArray(vec) {}
+template<typename _Tp> inline _OutputArray::_OutputArray(vector<Mat_<_Tp> >& vec)
+    : _InputArray(vec) {}
+template<typename _Tp> inline _OutputArray::_OutputArray(Mat_<_Tp>& m)
+    : _InputArray(m) {}
+template<typename _Tp, int m, int n> inline _OutputArray::_OutputArray(Matx<_Tp, m, n>& mtx)
+    : _InputArray(mtx) {}
+template<typename _Tp> inline _OutputArray::_OutputArray(_Tp* vec, int n)
+    : _InputArray(vec, n) {}
+
+template<typename _Tp> inline _OutputArray::_OutputArray(const vector<_Tp>& vec)
+    : _InputArray(vec) {flags |= FIXED_SIZE;}
+template<typename _Tp> inline _OutputArray::_OutputArray(const vector<vector<_Tp> >& vec)
+    : _InputArray(vec) {flags |= FIXED_SIZE;}
+template<typename _Tp> inline _OutputArray::_OutputArray(const vector<Mat_<_Tp> >& vec)
+    : _InputArray(vec) {flags |= FIXED_SIZE;}
+    
+template<typename _Tp> inline _OutputArray::_OutputArray(const Mat_<_Tp>& m)
+    : _InputArray(m) {flags |= FIXED_SIZE;}
+template<typename _Tp, int m, int n> inline _OutputArray::_OutputArray(const Matx<_Tp, m, n>& mtx)
+    : _InputArray(mtx) {}
+template<typename _Tp> inline _OutputArray::_OutputArray(const _Tp* vec, int n)
+    : _InputArray(vec, n) {}
     
 //////////////////////////////////// Matrix Expressions /////////////////////////////////////////
 
@@ -1330,17 +1373,17 @@ template<typename _Tp> static inline void min(double s, const Mat_<_Tp>& a, Mat_
 
 template<typename _Tp> static inline void max(const Mat_<_Tp>& a, const Mat_<_Tp>& b, Mat_<_Tp>& c)
 {
-    cv::min((const Mat&)a, (const Mat&)b, (Mat&)c);
+    cv::max((const Mat&)a, (const Mat&)b, (Mat&)c);
 }
 
 template<typename _Tp> static inline void max(const Mat_<_Tp>& a, double s, Mat_<_Tp>& c)
 {
-    cv::min((const Mat&)a, s, (Mat&)c);
+    cv::max((const Mat&)a, s, (Mat&)c);
 }
 
 template<typename _Tp> static inline void max(double s, const Mat_<_Tp>& a, Mat_<_Tp>& c)
 {
-    cv::min((const Mat&)a, s, (Mat&)c);
+    cv::max((const Mat&)a, s, (Mat&)c);
 }
 
     
@@ -2260,7 +2303,7 @@ inline SparseMatConstIterator::SparseMatConstIterator(const SparseMatConstIterat
 }
 
 static inline bool operator == (const SparseMatConstIterator& it1, const SparseMatConstIterator& it2)
-{ return it1.m == it2.m && it1.hashidx == it2.hashidx && it1.ptr == it2.ptr; }
+{ return it1.m == it2.m && it1.ptr == it2.ptr; }
 
 static inline bool operator != (const SparseMatConstIterator& it1, const SparseMatConstIterator& it2)
 { return !(it1 == it2); }
@@ -2493,7 +2536,9 @@ SparseMatConstIterator_<_Tp>::SparseMatConstIterator_(const SparseMatConstIterat
 
 template<typename _Tp> inline SparseMatConstIterator_<_Tp>&
 SparseMatConstIterator_<_Tp>::operator = (const SparseMatConstIterator_<_Tp>& it)
-{ return ((SparseMatConstIterator&)*this = it); }
+{ return reinterpret_cast<SparseMatConstIterator_<_Tp>&>
+    (*reinterpret_cast<SparseMatConstIterator*>(this) =
+     reinterpret_cast<const SparseMatConstIterator&>(it)); }
 
 template<typename _Tp> inline const _Tp&
 SparseMatConstIterator_<_Tp>::operator *() const
@@ -2530,7 +2575,9 @@ SparseMatIterator_<_Tp>::SparseMatIterator_(const SparseMatIterator_<_Tp>& it)
 
 template<typename _Tp> inline SparseMatIterator_<_Tp>&
 SparseMatIterator_<_Tp>::operator = (const SparseMatIterator_<_Tp>& it)
-{ return ((SparseMatIterator&)*this = it); }
+{ return reinterpret_cast<SparseMatIterator_<_Tp>&>
+    (*reinterpret_cast<SparseMatConstIterator*>(this) =
+     reinterpret_cast<const SparseMatConstIterator&>(it)); }
 
 template<typename _Tp> inline _Tp&
 SparseMatIterator_<_Tp>::operator *() const

@@ -42,7 +42,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         gray = cv.LoadImage(sys.argv[1], cv.CV_LOAD_IMAGE_GRAYSCALE)
     else:
-        url = 'https://code.ros.org/svn/opencv/trunk/opencv/samples/c/stuff.jpg'
+        url = 'http://code.opencv.org/svn/opencv/trunk/opencv/samples/c/stuff.jpg'
         filedata = urllib2.urlopen(url).read()
         imagefiledata = cv.CreateMatHeader(1, len(filedata), cv.CV_8UC1)
         cv.SetData(imagefiledata, filedata, len(filedata))
@@ -69,3 +69,4 @@ if __name__ == "__main__":
 
     # Wait for a key stroke; the same function arranges events processing
     cv.WaitKey(0)
+    cv.DestroyAllWindows()

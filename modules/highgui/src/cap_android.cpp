@@ -93,7 +93,7 @@ protected:
     {
         noformat = 0,
         yuv420sp,
-        yuv420i,
+        yvu420sp,
         yuvUnknown
     };
 
@@ -263,11 +263,30 @@ double CvCapture_Android::getProperty( int propIdx )
         return (double)m_activity->getFrameWidth();
     case CV_CAP_PROP_FRAME_HEIGHT:
         return (double)m_activity->getFrameHeight();
-
     case CV_CAP_PROP_SUPPORTED_PREVIEW_SIZES_STRING:
-	return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_SUPPORTED_PREVIEW_SIZES_STRING);
+    return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_SUPPORTED_PREVIEW_SIZES_STRING);
     case CV_CAP_PROP_PREVIEW_FORMAT:
         return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_PREVIEW_FORMAT_STRING);
+    case CV_CAP_PROP_FPS:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_FPS);
+    case CV_CAP_PROP_EXPOSURE:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_EXPOSURE);
+    case CV_CAP_PROP_ANDROID_FLASH_MODE:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_FLASH_MODE);
+    case CV_CAP_PROP_ANDROID_FOCUS_MODE:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_FOCUS_MODE);
+    case CV_CAP_PROP_ANDROID_WHITE_BALANCE:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_WHITE_BALANCE);
+    case CV_CAP_PROP_ANDROID_ANTIBANDING:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_ANTIBANDING);
+    case CV_CAP_PROP_ANDROID_FOCAL_LENGTH:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_FOCAL_LENGTH);
+    case CV_CAP_PROP_ANDROID_FOCUS_DISTANCE_NEAR:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_FOCUS_DISTANCE_NEAR);
+    case CV_CAP_PROP_ANDROID_FOCUS_DISTANCE_OPTIMAL:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_FOCUS_DISTANCE_OPTIMAL);
+    case CV_CAP_PROP_ANDROID_FOCUS_DISTANCE_FAR:
+        return (double)m_activity->getProperty(ANDROID_CAMERA_PROPERTY_FOCUS_DISTANCE_FAR);
     default:
         CV_Error( CV_StsOutOfRange, "Failed attempt to GET unsupported camera property." );
         break;
@@ -288,11 +307,24 @@ bool CvCapture_Android::setProperty( int propIdx, double propValue )
         case CV_CAP_PROP_FRAME_HEIGHT:
             m_activity->setProperty(ANDROID_CAMERA_PROPERTY_FRAMEHEIGHT, propValue);
             break;
-
         case CV_CAP_PROP_AUTOGRAB:
 	    m_shouldAutoGrab=(propValue != 0);
             break;
-
+        case CV_CAP_PROP_EXPOSURE:
+            m_activity->setProperty(ANDROID_CAMERA_PROPERTY_EXPOSURE, propValue);
+            break;
+        case CV_CAP_PROP_ANDROID_FLASH_MODE:
+            m_activity->setProperty(ANDROID_CAMERA_PROPERTY_FLASH_MODE, propValue);
+            break;
+        case CV_CAP_PROP_ANDROID_FOCUS_MODE:
+            m_activity->setProperty(ANDROID_CAMERA_PROPERTY_FOCUS_MODE, propValue);
+            break;
+        case CV_CAP_PROP_ANDROID_WHITE_BALANCE:
+            m_activity->setProperty(ANDROID_CAMERA_PROPERTY_WHITE_BALANCE, propValue);
+            break;
+        case CV_CAP_PROP_ANDROID_ANTIBANDING:
+            m_activity->setProperty(ANDROID_CAMERA_PROPERTY_ANTIBANDING, propValue);
+            break;
         default:
             CV_Error( CV_StsOutOfRange, "Failed attempt to SET unsupported camera property." );
 	    return false;
@@ -371,8 +403,8 @@ IplImage* CvCapture_Android::retrieveFrame( int outputType )
             u.prop = getProperty(CV_CAP_PROP_PREVIEW_FORMAT);
             if (0 == strcmp(u.name, "yuv420sp"))
                 m_frameFormat = yuv420sp;
-            else if (0 == strcmp(u.name, "yuv420i"))
-                m_frameFormat = yuv420i;
+            else if (0 == strcmp(u.name, "yvu420sp"))
+                m_frameFormat = yvu420sp;
             else
                 m_frameFormat = yuvUnknown;
         }
@@ -467,7 +499,7 @@ void CvCapture_Android::prepareCacheForYUV(int width, int height)
 bool CvCapture_Android::convertYUV2Grey(int width, int height, const unsigned char* yuv, cv::Mat& resmat)
 {
     if (yuv == 0) return false;
-    if (m_frameFormat != yuv420sp && m_frameFormat != yuv420i) return false;
+    if (m_frameFormat != yuv420sp && m_frameFormat != yvu420sp) return false;
 #define ALWAYS_COPY_GRAY 0
 #if ALWAYS_COPY_GRAY
     resmat.create(height, width, CV_8UC1);
@@ -482,7 +514,7 @@ bool CvCapture_Android::convertYUV2Grey(int width, int height, const unsigned ch
 bool CvCapture_Android::convertYUV2BGR(int width, int height, const unsigned char* yuv, cv::Mat& resmat, bool inRGBorder, bool withAlpha)
 {
     if (yuv == 0) return false;
-    if (m_frameFormat != yuv420sp && m_frameFormat != yuv420i) return false;
+    if (m_frameFormat != yuv420sp && m_frameFormat != yvu420sp) return false;
 
     CV_Assert(width % 2 == 0 && height % 2 == 0);
 
@@ -490,8 +522,8 @@ bool CvCapture_Android::convertYUV2BGR(int width, int height, const unsigned cha
 
     if (m_frameFormat == yuv420sp)
         cv::cvtColor(src, resmat, inRGBorder ? CV_YUV420sp2RGB : CV_YUV420sp2BGR, withAlpha ? 4 : 3);
-    else if (m_frameFormat == yuv420i)
-        cv::cvtColor(src, resmat, inRGBorder ? CV_YUV420i2RGB : CV_YUV420i2BGR, withAlpha ? 4 : 3);
+    else if (m_frameFormat == yvu420sp)
+        cv::cvtColor(src, resmat, inRGBorder ? CV_YUV2RGB_NV21 : CV_YUV2BGR_NV12, withAlpha ? 4 : 3);
 
     return !resmat.empty();
 }

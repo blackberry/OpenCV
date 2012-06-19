@@ -1,83 +1,62 @@
+set(the_description "High-level GUI and Media I/O")
+ocv_add_module(highgui opencv_imgproc OPTIONAL opencv_androidcamera)
+
 # ----------------------------------------------------------------------------
 #  CMake file for highgui. See root CMakeLists.txt
 #   Some parts taken from version of Hartmut Seichter, HIT Lab NZ.
 #   Jose Luis Blanco, 2008
 # ----------------------------------------------------------------------------
-project(opencv_highgui)
 
-set(GRFMT_LIBS)
+ocv_clear_vars(GRFMT_LIBS)
 
 if(WITH_PNG OR WITH_TIFF OR WITH_OPENEXR)
-    if(ZLIB_FOUND)
-        include_directories(${ZLIB_INCLUDE_DIR})
-        set(GRFMT_LIBS ${GRFMT_LIBS} ${ZLIB_LIBRARIES})
-    else()
-        include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/zlib")
-        set(GRFMT_LIBS ${GRFMT_LIBS} zlib)
-    endif()
+  ocv_include_directories(${ZLIB_INCLUDE_DIR})
+  list(APPEND GRFMT_LIBS ${ZLIB_LIBRARIES})
 endif()
 
 if(WITH_JPEG)
-    add_definitions(-DHAVE_JPEG)
-    if(JPEG_FOUND)
-        include_directories(${JPEG_INCLUDE_DIR})
-        set(GRFMT_LIBS ${GRFMT_LIBS} ${JPEG_LIBRARIES})
-    else()
-        include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/libjpeg")
-        set(GRFMT_LIBS ${GRFMT_LIBS} libjpeg)
-    endif()
+  add_definitions(-DHAVE_JPEG)
+  ocv_include_directories(${JPEG_INCLUDE_DIR})
+  list(APPEND GRFMT_LIBS ${JPEG_LIBRARIES})
 endif()
 
 if(WITH_PNG)
-    add_definitions(-DHAVE_PNG)
-    if(PNG_FOUND)
-        add_definitions(${PNG_DEFINITIONS})
-        include_directories(${PNG_INCLUDE_DIR})
-        set(GRFMT_LIBS ${GRFMT_LIBS} ${PNG_LIBRARIES})
-    else()
-        include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/libpng")
-        set(GRFMT_LIBS ${GRFMT_LIBS} libpng)
-    endif()
+  add_definitions(-DHAVE_PNG)
+  add_definitions(${PNG_DEFINITIONS})
+  ocv_include_directories(${PNG_INCLUDE_DIR})
+  list(APPEND GRFMT_LIBS ${PNG_LIBRARIES})
 endif()
 
 if(WITH_TIFF)
-    add_definitions(-DHAVE_TIFF)
-    if(TIFF_FOUND)
-        include_directories(${TIFF_INCLUDE_DIR})
-        set(GRFMT_LIBS ${GRFMT_LIBS} ${TIFF_LIBRARIES})
-    else()
-        include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/libtiff")
-        set(GRFMT_LIBS ${GRFMT_LIBS} libtiff)
-    endif()
+  add_definitions(-DHAVE_TIFF)
+  ocv_include_directories(${TIFF_INCLUDE_DIR})
+  list(APPEND GRFMT_LIBS ${TIFF_LIBRARIES})
 endif()
 
 if(WITH_JASPER)
-    add_definitions(-DHAVE_JASPER)
-    if(JASPER_FOUND)
-        include_directories(${JASPER_INCLUDE_DIR})
-        set(GRFMT_LIBS ${GRFMT_LIBS} ${JASPER_LIBRARIES})
-    else()
-        include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/libjasper")
-        set(GRFMT_LIBS ${GRFMT_LIBS} libjasper)
-    endif()
+  add_definitions(-DHAVE_JASPER)
+  ocv_include_directories(${JASPER_INCLUDE_DIR})
+  list(APPEND GRFMT_LIBS ${JASPER_LIBRARIES})
 endif()
 
 if(WITH_OPENEXR AND OPENEXR_FOUND)
-    add_definitions(-DHAVE_OPENEXR)
-    include_directories(${OPENEXR_INCLUDE_PATHS})
-    set(GRFMT_LIBS ${GRFMT_LIBS} ${OPENEXR_LIBRARIES})
-endif()
-
-if(MSVC)
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /NODEFAULTLIB:libcmt.lib")
+  add_definitions(-DHAVE_OPENEXR)
+  ocv_include_directories(${OPENEXR_INCLUDE_PATHS})
+  list(APPEND GRFMT_LIBS ${OPENEXR_LIBRARIES})
 endif()
 
 file(GLOB grfmt_hdrs src/grfmt*.hpp)
 file(GLOB grfmt_srcs src/grfmt*.cpp)
-set(grfmt_hdrs src/bitstrm.hpp ${grfmt_hdrs})
-set(grfmt_srcs src/bitstrm.cpp ${grfmt_srcs})
+list(APPEND grfmt_hdrs src/bitstrm.hpp)
+list(APPEND grfmt_srcs src/bitstrm.cpp)
 
 source_group("Src\\grfmts" FILES ${grfmt_hdrs} ${grfmt_srcs})
+
+set(highgui_hdrs
+    src/precomp.hpp
+    src/utils.hpp
+    src/cap_ffmpeg_impl.hpp
+    )
 
 set(highgui_srcs
     src/cap.cpp
@@ -89,339 +68,195 @@ set(highgui_srcs
     src/window.cpp
     )
 
-set(highgui_hdrs src/precomp.hpp src/utils.hpp)
+file(GLOB highgui_ext_hdrs "include/opencv2/${name}/*.hpp" "include/opencv2/${name}/*.h")
 
-#YV
-set(lib_hdr_names highgui_c.h highgui.hpp)
-set(highgui_ext_hdrs)
-foreach(h ${lib_hdr_names})
-    list(APPEND highgui_ext_hdrs "${CMAKE_CURRENT_SOURCE_DIR}/include/opencv2/highgui/${h}")
-endforeach()
+if(HAVE_QT)
+  if (HAVE_QT_OPENGL)
+    set(QT_USE_QTOPENGL TRUE)
+  endif()
+  include(${QT_USE_FILE})
 
-#YV
-if (HAVE_QT)
-    if (HAVE_QT_OPENGL)
-        set(QT_USE_QTOPENGL TRUE)
-    endif()
-    INCLUDE(${QT_USE_FILE})
-    
-    SET(_RCCS_FILES src/window_QT.qrc)
-    QT4_ADD_RESOURCES(_RCC_OUTFILES ${_RCCS_FILES})
+  QT4_ADD_RESOURCES(_RCC_OUTFILES src/window_QT.qrc)
+  QT4_WRAP_CPP(_MOC_OUTFILES src/window_QT.h)
 
-    SET(_MOC_HEADERS src/window_QT.h )
-    QT4_WRAP_CPP(_MOC_OUTFILES ${_MOC_HEADERS})
-     
-    set(HIGHGUI_LIBRARIES ${HIGHGUI_LIBRARIES} ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
-    set(highgui_srcs ${highgui_srcs} src/window_QT.cpp ${_MOC_OUTFILES} ${_RCC_OUTFILES} )
+  list(APPEND HIGHGUI_LIBRARIES ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+  list(APPEND highgui_srcs src/window_QT.cpp ${_MOC_OUTFILES} ${_RCC_OUTFILES} )
+elseif(WIN32)
+  list(APPEND highgui_srcs src/window_w32.cpp)
+elseif(HAVE_GTK)
+  list(APPEND highgui_srcs src/window_gtk.cpp)
+elseif(APPLE)
+  if(WITH_CARBON)
+    add_definitions(-DHAVE_CARBON=1)
+    list(APPEND highgui_srcs src/window_carbon.cpp)
+    list(APPEND HIGHGUI_LIBRARIES "-framework Carbon" "-framework QuickTime")
+  elseif(NOT IOS)
+    add_definitions(-DHAVE_COCOA=1)
+    list(APPEND highgui_srcs src/window_cocoa.mm)
+    list(APPEND HIGHGUI_LIBRARIES "-framework Cocoa")
+  endif()
 endif()
-    
+
 if(WIN32)
-    if(NOT HAVE_QT)
-        set(highgui_srcs ${highgui_srcs} src/window_w32.cpp)
-    endif()
-    set(highgui_srcs ${highgui_srcs} src/cap_vfw.cpp src/cap_cmu.cpp src/cap_dshow.cpp)
-    if(HAVE_MIL)
-        set(highgui_srcs ${highgui_srcs} src/cap_mil.cpp)
-    endif()
+  list(APPEND highgui_srcs src/cap_vfw.cpp src/cap_cmu.cpp src/cap_dshow.cpp)
+endif(WIN32)
+
+if(HAVE_XINE)
+  list(APPEND highgui_srcs src/cap_xine.cpp)
+endif(HAVE_XINE)
+
+if(HAVE_DC1394_2)
+  list(APPEND highgui_srcs src/cap_dc1394_v2.cpp)
+endif(HAVE_DC1394_2)
+
+if(HAVE_DC1394)
+  list(APPEND highgui_srcs src/cap_dc1394.cpp)
+endif(HAVE_DC1394)
+
+if(HAVE_GSTREAMER)
+  list(APPEND highgui_srcs src/cap_gstreamer.cpp)
+endif(HAVE_GSTREAMER)
+
+if(HAVE_UNICAP)
+  list(APPEND highgui_srcs src/cap_unicap.cpp)
+endif(HAVE_UNICAP)
+
+if(HAVE_LIBV4L)
+  list(APPEND highgui_srcs src/cap_libv4l.cpp)
+elseif(HAVE_CAMV4L OR HAVE_CAMV4L2)
+  list(APPEND highgui_srcs src/cap_v4l.cpp)
+endif()
+
+if(HAVE_OPENNI)
+  list(APPEND highgui_srcs src/cap_openni.cpp)
+  ocv_include_directories(${OPENNI_INCLUDE_DIR})
+  list(APPEND HIGHGUI_LIBRARIES ${OPENNI_LIBRARY})
+endif(HAVE_OPENNI)
+
+if(HAVE_opencv_androidcamera)
+  list(APPEND highgui_srcs src/cap_android.cpp)
+  add_definitions(-DHAVE_ANDROID_NATIVE_CAMERA)#TODO: remove this line
+endif(HAVE_opencv_androidcamera)
+
+if(HAVE_XIMEA)
+  list(APPEND highgui_srcs src/cap_ximea.cpp)
+  ocv_include_directories(${XIMEA_PATH})
+  link_directories(${XIMEA_LIBRARY_DIR})
+  list(APPEND HIGHGUI_LIBRARIES m3api)
+endif(HAVE_XIMEA)
+
+if(HAVE_FFMPEG)
+  if(UNIX AND BZIP2_LIBRARIES)
+    list(APPEND HIGHGUI_LIBRARIES ${BZIP2_LIBRARIES})
+  endif()
+  if(APPLE)
+    list(APPEND HIGHGUI_LIBRARIES "-framework VideoDecodeAcceleration")
+  endif()
+endif(HAVE_FFMPEG)
+
+if(HAVE_PVAPI)
+  add_definitions(-DHAVE_PVAPI)
+  ocv_include_directories(${PVAPI_INCLUDE_PATH})
+  set(highgui_srcs src/cap_pvapi.cpp ${highgui_srcs})
+  list(APPEND HIGHGUI_LIBRARIES ${PVAPI_LIBRARY})
+endif()
+
+if(WITH_IMAGEIO)
+  add_definitions(-DHAVE_IMAGEIO=1)
+  if(IOS)
+    list(APPEND HIGHGUI_LIBRARIES "-framework ImageIO")
+  endif()
+  #TODO: check if need to link with some framework on OS X: -framework ApplicationServices ??
+endif(WITH_IMAGEIO)
+
+if(WITH_AVFOUNDATION)
+  add_definitions(-DHAVE_AVFOUNDATION=1)
+  list(APPEND highgui_srcs src/cap_avfoundation.mm)
+  list(APPEND HIGHGUI_LIBRARIES "-framework AVFoundation" "-framework QuartzCore")
+elseif(APPLE)
+  add_definitions(-DHAVE_QUICKTIME=1)
+  if(WITH_QUICKTIME)
+    list(APPEND highgui_srcs src/cap_qt.cpp)
+    list(APPEND HIGHGUI_LIBRARIES "-framework Carbon" "-framework QuickTime" "-framework CoreFoundation" "-framework QuartzCore")
+  else()
+    list(APPEND highgui_srcs src/cap_qtkit.mm)
+    list(APPEND HIGHGUI_LIBRARIES "-framework QTKit" "-framework QuartzCore")
+  endif()
+endif()
+
+if(WIN32)
+  link_directories("${OpenCV_SOURCE_DIR}/3rdparty/lib") # for ffmpeg wrapper only
+  include_directories(AFTER "${OpenCV_SOURCE_DIR}/3rdparty/include") # for directshow in VS2005 and multi-monitor support on MinGW
 endif()
 
 if(UNIX)
-    if(NOT HAVE_QT)        
-        if(HAVE_GTK)
-            set(highgui_srcs ${highgui_srcs} src/window_gtk.cpp)
-        endif()
-    endif()
+  #these variables are set by CHECK_MODULE macro
+  foreach(P ${HIGHGUI_INCLUDE_DIRS})
+    ocv_include_directories(${P})
+  endforeach()
 
-    if(HAVE_XINE)
-        set(highgui_srcs ${highgui_srcs} src/cap_xine.cpp)
-    endif()
-
-    if(HAVE_DC1394_2)
-        set(highgui_srcs ${highgui_srcs} src/cap_dc1394_v2.cpp)
-    endif()
-
-    if(HAVE_DC1394)
-        set(highgui_srcs ${highgui_srcs} src/cap_dc1394.cpp)
-    endif()
-
-    if(HAVE_FFMPEG)
-        if(BZIP2_LIBRARIES)
-            set(HIGHGUI_LIBRARIES ${HIGHGUI_LIBRARIES} ${BZIP2_LIBRARIES})
-        endif()
-    endif()
-    
-    if(HAVE_PVAPI)
-        add_definitions(-DHAVE_PVAPI)
-        set(highgui_srcs src/cap_pvapi.cpp ${highgui_srcs})
-        set(HIGHGUI_LIBRARIES ${HIGHGUI_LIBRARIES} PvAPI)
-    endif()
-
-    if(HAVE_GSTREAMER)
-        set(highgui_srcs ${highgui_srcs} src/cap_gstreamer.cpp)
-    endif()
-
-    if(HAVE_UNICAP)
-        set(highgui_srcs ${highgui_srcs} src/cap_unicap.cpp)
-    endif()
-
-    if(HAVE_LIBV4L)
-        set(highgui_srcs ${highgui_srcs} src/cap_libv4l.cpp)
-    else()
-        if(HAVE_CAMV4L OR HAVE_CAMV4L2)
-            set(highgui_srcs ${highgui_srcs} src/cap_v4l.cpp)
-        endif()
-    endif()
-
-    foreach(P ${HIGHGUI_INCLUDE_DIRS})
-        include_directories(${P})
-    endforeach()
-
-    foreach(P ${HIGHGUI_LIBRARY_DIRS})
-        link_directories(${P})
-    endforeach()
-endif()
-
-#OpenNI
-if(WITH_OPENNI AND HAVE_OPENNI)
-    set(highgui_srcs ${highgui_srcs} src/cap_openni.cpp)
-    include_directories(${OPENNI_INCLUDE_DIR})
-endif()
-
-#YV
-if(APPLE)
-    add_definitions(-DHAVE_QUICKTIME=1)
-    if(NOT OPENCV_BUILD_3RDPARTY_LIBS)
-        add_definitions(-DHAVE_IMAGEIO=1)
-    endif()
-    
-    if (NOT HAVE_QT)
-        if(WITH_CARBON)
-            add_definitions(-DHAVE_CARBON=1)
-            set(highgui_srcs ${highgui_srcs} src/window_carbon.cpp)
-        else()
-            add_definitions(-DHAVE_COCOA=1)
-            set(highgui_srcs ${highgui_srcs} src/window_cocoa.mm)
-        endif()
-    endif()
-    
-    if(WITH_QUICKTIME)
-        set(highgui_srcs ${highgui_srcs} src/cap_qt.cpp)
-    else()
-        set(highgui_srcs ${highgui_srcs} src/cap_qtkit.mm)
-    endif()
-endif(APPLE)
-
-if(WITH_ANDROID_CAMERA)
-  include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../androidcamera/include")
-  set(highgui_srcs ${highgui_srcs} src/cap_android.cpp)
-  add_definitions(-DHAVE_ANDROID_NATIVE_CAMERA)
-  set(HIGHGUI_LIBRARIES ${HIGHGUI_LIBRARIES} opencv_androidcamera)
-endif()
-
-#XIMEA API
-if(HAVE_XIMEA AND XIMEA_FOUND)
-   set(highgui_srcs ${highgui_srcs} src/cap_ximea.cpp)
-   include_directories(${XIMEA_PATH})
-   link_directories(${XIMEA_LIBRARY_DIR})
-   set(HIGHGUI_LIBRARIES ${HIGHGUI_LIBRARIES} m3api)
-   set(highgui_srcs ${highgui_srcs} src/cap_ximea.cpp)
-endif()
-
-if(COMMAND get_module_external_sources)
-    set( lib_srcs "${highgui_srcs}" )
-    set( lib_int_hdrs "${highgui_hdrs}" )
-    get_module_external_sources(highgui)
-    set( highgui_srcs "${lib_srcs}" )
-    set( highgui_hdrs "${lib_int_hdrs}" )
+  foreach(P ${HIGHGUI_LIBRARY_DIRS})
+    link_directories(${P})
+  endforeach()
 endif()
 
 source_group("Src" FILES ${highgui_srcs} ${highgui_hdrs})
 source_group("Include" FILES ${highgui_ext_hdrs})
+ocv_set_module_sources(HEADERS ${highgui_ext_hdrs} SOURCES ${highgui_srcs} ${highgui_hdrs} ${grfmt_srcs} ${grfmt_hdrs})
+ocv_module_include_directories()
 
-if(OPENCV_BUILD_3RDPARTY_LIBS)
-    if(WIN32)
-        link_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/lib")
-    endif()
-    link_directories(
-        "${CMAKE_BINARY_DIR}/3rdparty/lib"
-        "${CMAKE_BINARY_DIR}/3rdparty/lib/${ConfigurationName}"
-        )
+ocv_list_unique(HIGHGUI_LIBRARIES)
+ocv_create_module(${GRFMT_LIBS} ${HIGHGUI_LIBRARIES})
+
+if(BUILD_SHARED_LIBS)
+  add_definitions(-DHIGHGUI_EXPORTS)
 endif()
-
-set(lib_srcs ${highgui_srcs} ${grfmt_srcs})
-
-# ----------------------------------------------------------------------------------
-#               Define the library target:
-# ----------------------------------------------------------------------------------
-set(the_target "opencv_highgui")
-
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}/include"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/../core/include"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/../imgproc/include"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/src"
-                    "${CMAKE_CURRENT_BINARY_DIR}")
-
-if(WIN32)
-    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/include")
-endif()
-
-add_library(${the_target} ${lib_srcs} ${highgui_hdrs} ${grfmt_hdrs} ${highgui_ext_hdrs})
-
-if (BUILD_SHARED_LIBS)
-	add_definitions(-DHIGHGUI_EXPORTS)
-	if(MSVC)
-		set_target_properties(${the_target} PROPERTIES DEFINE_SYMBOL CVAPI_EXPORTS)
-	else()
-		add_definitions(-DCVAPI_EXPORTS)
-	endif()
-endif()
-
-add_opencv_precompiled_headers(${the_target})
-
-# For dynamic link numbering convenions
-if(NOT ANDROID)
-    # Android SDK build scripts can include only .so files into final .apk
-    set_target_properties(${the_target} PROPERTIES
-        VERSION ${OPENCV_VERSION}
-        SOVERSION ${OPENCV_SOVERSION}
-        )
-endif()
-
-set_target_properties(${the_target} PROPERTIES OUTPUT_NAME "${the_target}${OPENCV_DLLVERSION}" )
-
-# Additional target properties
-set_target_properties(${the_target} PROPERTIES
-    DEBUG_POSTFIX "${OPENCV_DEBUG_POSTFIX}"
-    ARCHIVE_OUTPUT_DIRECTORY ${LIBRARY_OUTPUT_PATH}
-    RUNTIME_OUTPUT_DIRECTORY ${EXECUTABLE_OUTPUT_PATH}
-    INSTALL_NAME_DIR lib
-    LINK_INTERFACE_LIBRARIES ""
-    )
-
-if(ENABLE_SOLUTION_FOLDERS)
-    set_target_properties(${the_target} PROPERTIES FOLDER "modules")
-endif() 
-
 
 if(MSVC)
-    set_target_properties(${the_target} PROPERTIES LINK_FLAGS "/NODEFAULTLIB:atlthunk.lib /NODEFAULTLIB:atlsd.lib /DEBUG")
-endif(MSVC)
-
-# Dependencies of this target:
-add_dependencies(${the_target} opencv_core opencv_imgproc)
-
-# Add the required libraries for linking:
-
-if(WITH_JASPER AND NOT JASPER_FOUND)
-    add_dependencies(${the_target} libjasper)
+  set_target_properties(${the_module} PROPERTIES LINK_FLAGS "/NODEFAULTLIB:atlthunk.lib /NODEFAULTLIB:atlsd.lib /NODEFAULTLIB:libcmt.lib /DEBUG")
 endif()
 
-if(WITH_JPEG AND NOT JPEG_FOUND)
-    add_dependencies(${the_target} libjpeg)
+#stop automatic dependencies propagation for this module
+set_target_properties(${the_module} PROPERTIES LINK_INTERFACE_LIBRARIES "")
+
+ocv_add_precompiled_headers(${the_module})
+
+if(CMAKE_COMPILER_IS_GNUCXX AND NOT ENABLE_NOISY_WARNINGS)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 endif()
 
-if(WITH_PNG AND NOT PNG_FOUND)
-    add_dependencies(${the_target} libpng)
-endif()
-
-if(WITH_TIFF AND NOT TIFF_FOUND)
-    add_dependencies(${the_target} libtiff)
-endif()
-
-if(NOT ZLIB_FOUND)
-    add_dependencies(${the_target} zlib)
-endif()
-
-if(WITH_ANDROID_CAMERA)
-    add_dependencies(${the_target} opencv_androidcamera)
-endif()
-
-#message(STATUS "GRFMT: ${GRFMT_LIBS}")
-#message(STATUS "HIGHGUI_LIBS: ${HIGHGUI_LIBRARIES}")
-#message(STATUS "OPENCV_LIBS: ${OPENCV_LINKER_LIBS}")
-
-target_link_libraries(${the_target} ${OPENCV_LINKER_LIBS} opencv_core
-                      opencv_imgproc ${GRFMT_LIBS} ${HIGHGUI_LIBRARIES})
-if( OPENNI_LIBRARY )
-    target_link_libraries(${the_target} ${OPENNI_LIBRARY})
-endif()
-
-if(APPLE)
-    target_link_libraries(${the_target} "-lbz2 -framework Cocoa -framework QuartzCore")
-    if(WITH_CARBON)
-        target_link_libraries(${the_target} "-framework Carbon")
-    endif()
-    if(NOT WITH_QUICKTIME)
-        target_link_libraries(${the_target} "-framework QTKit")
-    endif()
-    if(WITH_CARBON OR WITH_QUICKTIME)
-        target_link_libraries(${the_target} "-framework QuickTime -framework CoreFoundation")
-    endif()
-endif()
-
-install(TARGETS ${the_target}
-    RUNTIME DESTINATION bin COMPONENT main
-    LIBRARY DESTINATION ${OPENCV_LIB_INSTALL_PATH} COMPONENT main
-    ARCHIVE DESTINATION ${OPENCV_LIB_INSTALL_PATH} COMPONENT main)
-
-install(FILES ${highgui_ext_hdrs}
-        DESTINATION ${OPENCV_INCLUDE_PREFIX}/opencv2/highgui
-        COMPONENT main)
-
-
-############################# highgui tests ################################
-if(BUILD_TESTS)
-
-  include_directories("${CMAKE_CURRENT_SOURCE_DIR}/test"
-                      "${CMAKE_CURRENT_BINARY_DIR}")
-
-  set(test_deps opencv_ts opencv_highgui opencv_imgproc)
-  if(WITH_ANDROID_CAMERA)
-    set(test_deps ${test_deps} opencv_androidcamera)
+if(WIN32 AND WITH_FFMPEG)
+  #copy ffmpeg dll to the output folder
+  if(MSVC64 OR MINGW64)
+    set(FFMPEG_SUFFIX _64)
   endif()
 
-  foreach(d ${test_deps})
-      if(${d} MATCHES "opencv_")
-          string(REPLACE "opencv_" "${CMAKE_CURRENT_SOURCE_DIR}/../" d_dir ${d})
-          include_directories("${d_dir}/include")
-      endif()
-  endforeach()
+  set(ffmpeg_bare_name "opencv_ffmpeg${FFMPEG_SUFFIX}.dll")
+  set(ffmpeg_bare_name_ver "opencv_ffmpeg${OPENCV_DLLVERSION}${FFMPEG_SUFFIX}.dll")
+  set(ffmpeg_path "${OpenCV_SOURCE_DIR}/3rdparty/ffmpeg/${ffmpeg_bare_name}")
 
-  file(GLOB test_srcs "test/*.cpp")
-  file(GLOB test_hdrs "test/*.h*")
-
-  source_group("Src" FILES ${test_srcs})
-  source_group("Include" FILES ${test_hdrs})
-
-  set(the_target "opencv_test_highgui")
-
-  add_executable(${the_target} ${test_srcs} ${test_hdrs})
-
-  add_opencv_precompiled_headers(${the_target})
-
-  # Additional target properties
-  set_target_properties(${the_target} PROPERTIES
-      DEBUG_POSTFIX "${OPENCV_DEBUG_POSTFIX}"
-      RUNTIME_OUTPUT_DIRECTORY "${EXECUTABLE_OUTPUT_PATH}"
-      )
-
-  if(ENABLE_SOLUTION_FOLDERS)
-    set_target_properties(${the_target} PROPERTIES FOLDER "tests")
+  #if(MSVC AND CMAKE_VERSION VERSION_GREATER "2.8.2")
+  #  add_custom_command(TARGET ${the_module} POST_BUILD
+  #                     COMMAND ${CMAKE_COMMAND} -E copy "${ffmpeg_path}" "${EXECUTABLE_OUTPUT_PATH}/$<CONFIGURATION>/${ffmpeg_bare_name_ver}"
+  #                     COMMENT "Copying ${ffmpeg_path} to the output directory")
+  #else
+  if(MSVC_IDE)
+    add_custom_command(TARGET ${the_module} POST_BUILD
+                       COMMAND ${CMAKE_COMMAND} -E copy "${ffmpeg_path}" "${EXECUTABLE_OUTPUT_PATH}/Release/${ffmpeg_bare_name_ver}"
+                       COMMAND ${CMAKE_COMMAND} -E copy "${ffmpeg_path}" "${EXECUTABLE_OUTPUT_PATH}/Debug/${ffmpeg_bare_name_ver}"
+                       COMMENT "Copying ${ffmpeg_path} to the output directory")
+  elseif(MSVC)
+    add_custom_command(TARGET ${the_module} POST_BUILD
+                       COMMAND ${CMAKE_COMMAND} -E copy "${ffmpeg_path}" "${EXECUTABLE_OUTPUT_PATH}/${CMAKE_BUILD_TYPE}/${ffmpeg_bare_name_ver}"
+                       COMMENT "Copying ${ffmpeg_path} to the output directory")
+  else()
+    add_custom_command(TARGET ${the_module} POST_BUILD
+                       COMMAND ${CMAKE_COMMAND} -E copy "${ffmpeg_path}" "${EXECUTABLE_OUTPUT_PATH}/${ffmpeg_bare_name_ver}"
+                       COMMENT "Copying ${ffmpeg_path} to the output directory")
   endif()
 
-  add_dependencies(${the_target} ${test_deps})
+  install(FILES "${ffmpeg_path}" DESTINATION bin COMPONENT main RENAME "${ffmpeg_bare_name_ver}")
+endif()
 
-  # Add the required libraries for linking:
-  target_link_libraries(${the_target} ${OPENCV_LINKER_LIBS} ${test_deps})
-
-  enable_testing()
-  get_target_property(LOC ${the_target} LOCATION)
-  add_test(${the_target} "${LOC}")
-
-  if(WIN32)
-      if (MSVC AND NOT BUILD_SHARED_LIBS)
-        set_target_properties(${the_target} PROPERTIES LINK_FLAGS "/NODEFAULTLIB:atlthunk.lib /NODEFAULTLIB:atlsd.lib /DEBUG")
-      endif()
-      #install(TARGETS ${the_target} RUNTIME DESTINATION bin COMPONENT main)
-  endif()
-endif(BUILD_TESTS)
+ocv_add_accuracy_tests()
+ocv_add_perf_tests()

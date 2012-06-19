@@ -65,8 +65,15 @@
 
 //#define ENABLE_TRIM_COL_ROW
 
-//#pragma comment(lib, "highgui200d.lib")
 //#define DEBUG_CHESSBOARD
+#ifdef DEBUG_CHESSBOARD
+#  include "opencv2/opencv_modules.hpp"
+#  ifdef HAVE_OPENCV_HIGHGUI
+#    include "opencv2/highgui/highgui.hpp"
+#  else
+#    undef DEBUG_CHESSBOARD
+#  endif
+#endif
 #ifdef DEBUG_CHESSBOARD
 static int PRINTF( const char* fmt, ... )
 {
@@ -74,7 +81,6 @@ static int PRINTF( const char* fmt, ... )
     va_start(args, fmt);
     return vprintf(fmt, args);
 }
-#include "..//..//include/opencv/highgui.h"
 #else
 static int PRINTF( const char*, ... )
 {
@@ -1984,7 +1990,8 @@ bool cv::findCirclesGrid( InputArray _image, Size patternSize,
       bool isFound = false;
 #define BE_QUIET 1
 #if BE_QUIET
-      redirectError(quiet_error);
+      void* oldCbkData;
+      ErrorCallback oldCbk = redirectError(quiet_error, 0, &oldCbkData);
 #endif
       try
       {
@@ -1995,7 +2002,7 @@ bool cv::findCirclesGrid( InputArray _image, Size patternSize,
 
       }
 #if BE_QUIET
-      redirectError(0);
+      redirectError(oldCbk, oldCbkData);
 #endif
       if (isFound)
       {

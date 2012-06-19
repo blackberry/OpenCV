@@ -252,7 +252,7 @@ void cv::integral( InputArray _src, OutputArray _sum, OutputArray _sqsum, Output
     IntegralFunc func = 0;
 
     if( depth == CV_8U && sdepth == CV_32S )
-        func = (IntegralFunc)integral_8u32s;
+        func = (IntegralFunc)GET_OPTIMIZED(integral_8u32s);
     else if( depth == CV_8U && sdepth == CV_32F )
         func = (IntegralFunc)integral_8u32f;
     else if( depth == CV_8U && sdepth == CV_64F )

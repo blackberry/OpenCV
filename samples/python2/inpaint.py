@@ -22,7 +22,7 @@ if __name__ == '__main__':
     sketch = Sketcher('img', [img_mark, mark], lambda : ((255, 255, 255), 255))
 
     while True:
-        ch = cv2.waitKey()
+        ch = 0xFF & cv2.waitKey()
         if ch == 27:
             break
         if ch == ord(' '):
@@ -32,4 +32,5 @@ if __name__ == '__main__':
             img_mark[:] = img
             mark[:] = 0
             sketch.show()
+    cv2.destroyAllWindows() 			
             

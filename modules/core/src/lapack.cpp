@@ -245,9 +245,7 @@ JacobiImpl_( _Tp* A, size_t astep, _Tp* W, _Tp* V, size_t vstep, int n, uchar* b
     
     int iters, maxIters = n*n*30;
     
-    _Tp* maxSR = (_Tp*)alignPtr(buf, sizeof(_Tp));
-    _Tp* maxSC = maxSR + n;
-    int* indR = (int*)(maxSC + n);
+    int* indR = (int*)alignPtr(buf, sizeof(int));
     int* indC = indR + n;
     _Tp mv = (_Tp)0;
     
@@ -262,7 +260,6 @@ JacobiImpl_( _Tp* A, size_t astep, _Tp* W, _Tp* V, size_t vstep, int n, uchar* b
                 if( mv < val )
                     mv = val, m = i;
             }
-            maxSR[k] = mv;
             indR[k] = m;
         }
         if( k > 0 )
@@ -273,24 +270,23 @@ JacobiImpl_( _Tp* A, size_t astep, _Tp* W, _Tp* V, size_t vstep, int n, uchar* b
                 if( mv < val )
                     mv = val, m = i;
             }
-            maxSC[k] = mv;
             indC[k] = m;
         }
     }
     
-    for( iters = 0; iters < maxIters; iters++ )
+    if( n > 1 ) for( iters = 0; iters < maxIters; iters++ )
     {
         // find index (k,l) of pivot p
-        for( k = 0, mv = maxSR[0], i = 1; i < n-1; i++ )
+        for( k = 0, mv = std::abs(A[indR[0]]), i = 1; i < n-1; i++ )
         {
-            _Tp val = maxSR[i];
+            _Tp val = std::abs(A[astep*i + indR[i]]);
             if( mv < val )
                 mv = val, k = i;
         }
         int l = indR[k];
         for( i = 1; i < n; i++ )
         {
-            _Tp val = maxSC[i];
+            _Tp val = std::abs(A[astep*indC[i] + i]);
             if( mv < val )
                 mv = val, k = indC[i], l = i;
         }
@@ -341,7 +337,6 @@ JacobiImpl_( _Tp* A, size_t astep, _Tp* W, _Tp* V, size_t vstep, int n, uchar* b
                     if( mv < val )
                         mv = val, m = i;
                 }
-                maxSR[idx] = mv;
                 indR[idx] = m;
             }
             if( idx > 0 )
@@ -352,7 +347,6 @@ JacobiImpl_( _Tp* A, size_t astep, _Tp* W, _Tp* V, size_t vstep, int n, uchar* b
                     if( mv < val )
                         mv = val, m = i;
                 }
-                maxSC[idx] = mv;
                 indC[idx] = m;
             }
         }
@@ -533,10 +527,12 @@ template<> inline int VBLAS<double>::givensx(double* a, double* b, int n, double
 #endif
 
 template<typename _Tp> void
-JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int n, int n1)
+JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* _W, _Tp* Vt, size_t vstep, int m, int n, int n1)
 {
     VBLAS<_Tp> vblas;
-    _Tp eps = std::numeric_limits<_Tp>::epsilon()*10;
+    AutoBuffer<double> Wbuf(n);
+    double* W = Wbuf;
+    _Tp eps = DBL_EPSILON*10;
     int i, j, k, iter, max_iter = std::max(m, 30);
     _Tp c, s;
     double sd;
@@ -545,12 +541,12 @@ JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int 
     
     for( i = 0; i < n; i++ )
     {
-        for( k = 0, s = 0; k < m; k++ )
+        for( k = 0, sd = 0; k < m; k++ )
         {
             _Tp t = At[i*astep + k];
-            s += t*t;
+            sd += (double)t*t;
         }
-        W[i] = s;
+        W[i] = sd;
         
         if( Vt )
         {
@@ -567,12 +563,11 @@ JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int 
         for( i = 0; i < n-1; i++ )
             for( j = i+1; j < n; j++ )
             {
-                _Tp *Ai = At + i*astep, *Aj = At + j*astep, a = W[i], p = 0, b = W[j];
+                _Tp *Ai = At + i*astep, *Aj = At + j*astep;
+                double a = W[i], p = 0, b = W[j];
                 
-                k = vblas.dot(Ai, Aj, m, &p);
-                
-                for( ; k < m; k++ )
-                    p += Ai[k]*Aj[k];
+                for( k = 0; k < m; k++ )
+                    p += (double)Ai[k]*Aj[k];
                 
                 if( std::abs(p) <= eps*std::sqrt((double)a*b) )
                     continue;           
@@ -581,7 +576,7 @@ JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int 
                 double beta = a - b, gamma = hypot((double)p, beta), delta;
                 if( beta < 0 )
                 {
-                    delta = (_Tp)((gamma - beta)*0.5);
+                    delta = (gamma - beta)*0.5;
                     s = (_Tp)std::sqrt(delta/gamma);
                     c = (_Tp)(p/(gamma*s*2));
                 }
@@ -589,13 +584,13 @@ JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int 
                 {
                     c = (_Tp)std::sqrt((gamma + beta)/(gamma*2));
                     s = (_Tp)(p/(gamma*c*2));
-                    delta = (_Tp)(p*p*0.5/(gamma + beta));
+                    delta = p*p*0.5/(gamma + beta);
                 }
                 
                 if( iter % 2 )
                 {
-                    W[i] = (_Tp)(W[i] + delta);
-                    W[j] = (_Tp)(W[j] - delta);
+                    W[i] += delta;
+                    W[j] -= delta;
                     
                     k = vblas.givens(Ai, Aj, m, c, s);
                     
@@ -609,14 +604,13 @@ JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int 
                 else
                 {
                     a = b = 0;
-                    k = vblas.givensx(Ai, Aj, m, c, s, &a, &b);
-                    for( ; k < m; k++ )
+                    for( k = 0; k < m; k++ )
                     {
                         _Tp t0 = c*Ai[k] + s*Aj[k];
                         _Tp t1 = -s*Ai[k] + c*Aj[k];
                         Ai[k] = t0; Aj[k] = t1;
                         
-                        a += t0*t0; b += t1*t1;
+                        a += (double)t0*t0; b += (double)t1*t1;
                     }
                     W[i] = a; W[j] = b;
                 }
@@ -647,7 +641,7 @@ JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int 
             _Tp t = At[i*astep + k];
             sd += (double)t*t;
         }
-        W[i] = s = (_Tp)std::sqrt(sd);
+        W[i] = std::sqrt(sd);
     }
     
     for( i = 0; i < n-1; i++ )
@@ -672,14 +666,17 @@ JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int 
         }
     }
     
+    for( i = 0; i < n; i++ )
+        _W[i] = (_Tp)W[i];
+    
     if( !Vt )
         return;
-    RNG rng;
+    RNG rng(0x12345678);
     for( i = 0; i < n1; i++ )
     {
-        s = i < n ? W[i] : 0;
+        sd = i < n ? W[i] : 0;
         
-        while( s == 0 )
+        while( sd == 0 )
         {
             // if we got a zero singular value, then in order to get the corresponding left singular vector
             // we generate a random vector, project it to the previously computed left singular vectors,
@@ -687,7 +684,7 @@ JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int 
             const _Tp val0 = (_Tp)(1./m);
             for( k = 0; k < m; k++ )
             {
-                _Tp val = (rng.next() & 256) ? val0 : -val0;
+                _Tp val = (rng.next() & 256) != 0 ? val0 : -val0;
                 At[i*astep + k] = val;
             }
             for( iter = 0; iter < 2; iter++ )
@@ -715,10 +712,10 @@ JacobiSVDImpl_(_Tp* At, size_t astep, _Tp* W, _Tp* Vt, size_t vstep, int m, int 
                 _Tp t = At[i*astep + k];
                 sd += (double)t*t;
             }
-            s = (_Tp)std::sqrt(sd);
+            sd = std::sqrt(sd);
         }
         
-        s = 1/s;
+        s = (_Tp)(1/sd);
         for( k = 0; k < m; k++ )
             At[i*astep + k] *= s;
     }
@@ -744,7 +741,9 @@ MatrAXPY( int m, int n, const T1* x, int dx,
     for( i = 0; i < m; i++, x += dx, y += dy )
     {
         T2 s = a[i*inca];
-        for( j = 0; j <= n - 4; j += 4 )
+		j=0;
+		 #if CV_ENABLE_UNROLLED
+        for(; j <= n - 4; j += 4 )
         {
             T3 t0 = (T3)(y[j]   + s*x[j]);
             T3 t1 = (T3)(y[j+1] + s*x[j+1]);
@@ -755,7 +754,7 @@ MatrAXPY( int m, int n, const T1* x, int dx,
             y[j+2] = t0;
             y[j+3] = t1;
         }
-        
+        #endif
         for( ; j < n; j++ )
             y[j] = (T3)(y[j] + s*x[j]);
     }
@@ -837,7 +836,7 @@ SVBkSb( int m, int n, const float* w, size_t wstep,
                 v, (int)(vstep/sizeof(v[0])), vT,
                 b, (int)(bstep/sizeof(b[0])), nb,
                 x, (int)(xstep/sizeof(x[0])),
-                (double*)alignPtr(buffer, sizeof(double)), FLT_EPSILON*10 );
+                (double*)alignPtr(buffer, sizeof(double)), (float)(DBL_EPSILON*2) );
 }
 
 static void
@@ -949,33 +948,63 @@ double cv::invert( InputArray _src, OutputArray _dst, int method )
     Mat src = _src.getMat();
     int type = src.type();
 
-    CV_Assert( method == DECOMP_LU || method == DECOMP_CHOLESKY || method == DECOMP_SVD );
-    _dst.create( src.cols, src.rows, type );
-    Mat dst = _dst.getMat();
+    CV_Assert(type == CV_32F || type == CV_64F);
+
+    size_t esz = CV_ELEM_SIZE(type);
+    int m = src.rows, n = src.cols;
     
     if( method == DECOMP_SVD )
     {
-        int n = std::min(src.rows, src.cols);
-        SVD svd(src);
-        svd.backSubst(Mat(), dst);
-
+        int nm = std::min(m, n);
+        
+        AutoBuffer<uchar> _buf((m*nm + nm + nm*n)*esz + sizeof(double));
+        uchar* buf = alignPtr((uchar*)_buf, (int)esz);
+        Mat u(m, nm, type, buf);
+        Mat w(nm, 1, type, u.data + m*nm*esz);
+        Mat vt(nm, n, type, w.data + nm*esz);
+        
+        SVD::compute(src, w, u, vt);
+        SVD::backSubst(w, u, vt, Mat(), _dst);
         return type == CV_32F ?
-            (((float*)svd.w.data)[0] >= FLT_EPSILON ?
-            ((float*)svd.w.data)[n-1]/((float*)svd.w.data)[0] : 0) :
-            (((double*)svd.w.data)[0] >= DBL_EPSILON ?
-            ((double*)svd.w.data)[n-1]/((double*)svd.w.data)[0] : 0);
+            (((float*)w.data)[0] >= FLT_EPSILON ?
+             ((float*)w.data)[n-1]/((float*)w.data)[0] : 0) :
+            (((double*)w.data)[0] >= DBL_EPSILON ?
+             ((double*)w.data)[n-1]/((double*)w.data)[0] : 0);
     }
-
-    CV_Assert( src.rows == src.cols && (type == CV_32F || type == CV_64F));
     
-    if( src.rows <= 3 )
+    CV_Assert( m == n );
+    
+    if( method == DECOMP_EIG )
+    {
+        AutoBuffer<uchar> _buf((n*n*2 + n)*esz + sizeof(double));
+        uchar* buf = alignPtr((uchar*)_buf, (int)esz);
+        Mat u(n, n, type, buf);
+        Mat w(n, 1, type, u.data + n*n*esz);
+        Mat vt(n, n, type, w.data + n*esz);
+        
+        eigen(src, w, vt);
+        transpose(vt, u);
+        SVD::backSubst(w, u, vt, Mat(), _dst);
+        return type == CV_32F ?
+        (((float*)w.data)[0] >= FLT_EPSILON ?
+         ((float*)w.data)[n-1]/((float*)w.data)[0] : 0) :
+        (((double*)w.data)[0] >= DBL_EPSILON ?
+         ((double*)w.data)[n-1]/((double*)w.data)[0] : 0);
+    }
+    
+    CV_Assert( method == DECOMP_LU || method == DECOMP_CHOLESKY );
+    
+    _dst.create( n, n, type );
+    Mat dst = _dst.getMat();
+
+    if( n <= 3 )
     {
         uchar* srcdata = src.data;
         uchar* dstdata = dst.data;
         size_t srcstep = src.step;
         size_t dststep = dst.step;
 
-        if( src.rows == 2 )
+        if( n == 2 )
         {
             if( type == CV_32FC1 )
             {
@@ -1014,7 +1043,7 @@ double cv::invert( InputArray _src, OutputArray _dst, int method )
                 }
             }
         }
-        else if( src.rows == 3 )
+        else if( n == 3 )
         {
             if( type == CV_32FC1 )
             {
@@ -1071,7 +1100,7 @@ double cv::invert( InputArray _src, OutputArray _dst, int method )
         }
         else
         {
-            assert( src.rows == 1 );
+            assert( n == 1 );
 
             if( type == CV_32FC1 )
             {
@@ -1097,7 +1126,7 @@ double cv::invert( InputArray _src, OutputArray _dst, int method )
         return result;
     }
 
-    int n = dst.cols, elem_size = CV_ELEM_SIZE(type);
+    int elem_size = CV_ELEM_SIZE(type);
     AutoBuffer<uchar> buf(n*n*elem_size);
     Mat src1(n, n, type, (uchar*)buf);
     src.copyTo(src1);
@@ -1476,7 +1505,10 @@ static void _SVDcompute( InputArray _aarr, OutputArray _w,
     
     if( compute_uv )
         temp_v = Mat(n, n, type, alignPtr(buf + urows*astep + n*esz, 16), vstep);
-        
+    
+    if( urows > n )
+        temp_u = Scalar::all(0);
+    
     if( !at )
         transpose(src, temp_a);
     else
@@ -1484,12 +1516,12 @@ static void _SVDcompute( InputArray _aarr, OutputArray _w,
     
     if( type == CV_32F )
     {
-        JacobiSVD(temp_a.ptr<float>(), temp_a.step, temp_w.ptr<float>(),
+        JacobiSVD(temp_a.ptr<float>(), temp_u.step, temp_w.ptr<float>(),
               temp_v.ptr<float>(), temp_v.step, m, n, compute_uv ? urows : 0);
     }
     else
     {
-        JacobiSVD(temp_a.ptr<double>(), temp_a.step, temp_w.ptr<double>(),
+        JacobiSVD(temp_a.ptr<double>(), temp_u.step, temp_w.ptr<double>(),
               temp_v.ptr<double>(), temp_v.step, m, n, compute_uv ? urows : 0);
     }
     temp_w.copyTo(_w);
@@ -1615,7 +1647,8 @@ cvInvert( const CvArr* srcarr, CvArr* dstarr, int method )
 
     CV_Assert( src.type() == dst.type() && src.rows == dst.cols && src.cols == dst.rows );
     return cv::invert( src, dst, method == CV_CHOLESKY ? cv::DECOMP_CHOLESKY :
-        method == CV_SVD || method == CV_SVD_SYM ? cv::DECOMP_SVD : cv::DECOMP_LU );
+                      method == CV_SVD ? cv::DECOMP_SVD :
+                      method == CV_SVD_SYM ? cv::DECOMP_EIG : cv::DECOMP_LU );
 }
 
 
@@ -1628,7 +1661,8 @@ cvSolve( const CvArr* Aarr, const CvArr* barr, CvArr* xarr, int method )
     bool is_normal = (method & CV_NORMAL) != 0;
     method &= ~CV_NORMAL;
     return cv::solve( A, b, x, (method == CV_CHOLESKY ? cv::DECOMP_CHOLESKY :
-        method == CV_SVD || method == CV_SVD_SYM ? cv::DECOMP_SVD :
+                                method == CV_SVD ? cv::DECOMP_SVD :
+                                method == CV_SVD_SYM ? cv::DECOMP_EIG :
         A.rows > A.cols ? cv::DECOMP_QR : cv::DECOMP_LU) + (is_normal ? cv::DECOMP_NORMAL : 0) );
 }
 
