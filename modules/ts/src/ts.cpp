@@ -105,8 +105,18 @@ static void SEHTranslator( unsigned int /*u*/, EXCEPTION_POINTERS* pExp )
 
 #else
 
+#ifdef __QNX__
+// the following includes must not be in the cvtest namespace 
+// under QNX
+} // end of cvtest namespace
+#endif
+
 #include <signal.h>
 #include <setjmp.h>
+
+#ifdef __QNX__
+namespace cvtest {
+#endif
 
 static const int tsSigId[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT, -1 };
 

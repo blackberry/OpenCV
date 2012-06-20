@@ -53,7 +53,19 @@ namespace cv
 
 			while ((dirp = readdir(dp)) != NULL) 
 			{
+			#ifdef __QNX__
+				// QNX looks at the world a little differently
+				dirent_extra *extra;
+				dirent_extra_stat *extra_stat;
+				for (extra = _DEXTRA_FIRST(dirp),
+				     extra_stat = reinterpret_cast<dirent_extra_stat *>(extra); 
+				     _DEXTRA_VALID(extra, dirp); 
+			             extra = _DEXTRA_NEXT(extra),
+				     extra_stat = reinterpret_cast<dirent_extra_stat *>(extra))
+				if (extra->d_type == _DTYPE_STAT && S_ISREG(extra_stat->d_stat.st_mode))
+			#else
 				if (dirp->d_type == DT_REG)
+			#endif
 				{
 					if (exten.compare("*") == 0)
 						list.push_back(static_cast<std::string>(dirp->d_name));
@@ -110,7 +122,20 @@ namespace cv
 
 			while ((dirp = readdir(dp)) != NULL) 
 			{
+			#ifdef __QNX__
+				// QNX looks at the world a little differently
+				dirent_extra *extra;
+				dirent_extra_stat *extra_stat;
+				for (extra = _DEXTRA_FIRST(dirp),
+				     extra_stat = reinterpret_cast<dirent_extra_stat *>(extra); 
+				     _DEXTRA_VALID(extra, dirp); 
+				     extra = _DEXTRA_NEXT(extra),
+				     extra_stat = reinterpret_cast<dirent_extra_stat *>(extra))
+				if (extra->d_type == _DTYPE_STAT && 
+				    S_ISDIR(extra_stat->d_stat.st_mode) &&
+			#else
 				if (dirp->d_type == DT_DIR &&
+			#endif
 					strcmp(dirp->d_name, ".") != 0 && 
 					strcmp(dirp->d_name, "..") != 0 )
 				{
