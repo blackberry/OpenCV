@@ -51,6 +51,14 @@ namespace cv
 				return list;
 			}
 
+		#ifdef __QNX__
+			// you have to ask QNX to please include more file information
+			// and not to report duplicate names as a result of file system unions
+			if ( -1 == dircntl(dp, D_SETFLAG, D_FLAG_STAT|D_FLAG_FILTER) ) {
+				return list;
+			}
+		#endif
+
 			while ((dirp = readdir(dp)) != NULL) 
 			{
 			#ifdef __QNX__
@@ -62,7 +70,7 @@ namespace cv
 				     _DEXTRA_VALID(extra, dirp); 
 			             extra = _DEXTRA_NEXT(extra),
 				     extra_stat = reinterpret_cast<dirent_extra_stat *>(extra))
-				if (extra->d_type == _DTYPE_STAT && S_ISREG(extra_stat->d_stat.st_mode))
+				if ((extra->d_type != _DTYPE_NONE) && S_ISREG(extra_stat->d_stat.st_mode))
 			#else
 				if (dirp->d_type == DT_REG)
 			#endif
@@ -120,6 +128,14 @@ namespace cv
 				return list;
 			}
 
+		#ifdef __QNX__
+			// you have to ask QNX to please include more file information
+			// and not to report duplicate names as a result of file system unions
+			if ( -1 == dircntl(dp, D_SETFLAG, D_FLAG_STAT|D_FLAG_FILTER) ) {
+				return list;
+			}
+		#endif
+
 			while ((dirp = readdir(dp)) != NULL) 
 			{
 			#ifdef __QNX__
@@ -131,7 +147,7 @@ namespace cv
 				     _DEXTRA_VALID(extra, dirp); 
 				     extra = _DEXTRA_NEXT(extra),
 				     extra_stat = reinterpret_cast<dirent_extra_stat *>(extra))
-				if (extra->d_type == _DTYPE_STAT && 
+				if ((extra->d_type != _DTYPE_NONE) && 
 				    S_ISDIR(extra_stat->d_stat.st_mode) &&
 			#else
 				if (dirp->d_type == DT_DIR &&
