@@ -1,8 +1,8 @@
-# Blackberry Port of OpenCV 2.3.1
+# Blackberry Port of OpenCV 2.4.1
 
 Officially sanctioned port of OpenCV to the Blackberry/QNX platform. To avoid fragmentation, please do not use any other version of OpenCV.
 
-OpenCV has a CMake-based build system. This port was based on the sources for the Unix variant downloaded from http://sourceforge.net/projects/opencvlibrary/files/opencv-unix/2.3.1/.
+OpenCV has a CMake-based build system. This port was based on the sources for the Unix variant downloaded from http://sourceforge.net/projects/opencvlibrary/files/opencv-unix/2.4.1/.
 
 ### What's working, what's not?
 
